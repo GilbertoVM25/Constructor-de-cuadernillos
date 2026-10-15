@@ -1,10 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Block, Workbook } from './models/document';
+// import type { Block, Workbook } from './models/document';
 import { initialWorkbook } from './data/chemistry';
 import { PagePreview } from './components/preview/PagePreview';
 import { Inspector } from './components/editor/Inspector';
 import './styles/editor.css';
 import type { BlockKind } from './models/document';
+import type {
+  Block,
+  Workbook,
+  WorkbookProject,
+  WorkbookSequence,
+} from './models/document';
+import {
+  loadProject,
+  newSequence,
+  fromLegacyWorkbook,
+  PROJECT_STORAGE_KEY,
+} from './engine/project';
 import { createBlockTemplate } from './blocks/blockTemplates';
 import {
   migrateWorkbookContent,
@@ -37,14 +49,71 @@ import { SortableLibraryBlock } from './components/editor/SortableLibraryBlock';
 
 
 export default function App() {
-  const [workbook, setWorkbook] = useState<Workbook>(() => {
-    try {
-      const saved = localStorage.getItem('cuadernillo-react');
-      return saved ? (JSON.parse(saved) as Workbook) : initialWorkbook;
-    } catch {
-      return initialWorkbook;
-    }
-  });
+  
+  const [project, setProject] = useState<WorkbookProject>(
+    () => loadProject(initialWorkbook)
+  );
+
+  const [activeSequenceId, setActiveSequenceId] = useState(
+    () => project.sequences[0].id
+  );
+
+  
+  const [pdfScope, setPdfScope] = useState<
+    'all' | 'current'
+  >('all');
+
+  const [pdfPageCounts, setPdfPageCounts] = useState<
+    Record<string, number>
+  >({});
+
+  const FIRST_PDF_PAGE = 5;
+
+
+  const workbook =
+    project.sequences.find(
+      (sequence) => sequence.id === activeSequenceId
+    ) ?? project.sequences[0];
+  
+  
+  
+  const pdfSequences =
+    pdfScope === 'all'
+      ? project.sequences
+      : [workbook];
+
+  // Numeración global del cuadernillo.
+  // No depende de la opción de impresión.
+  const sequenceStartPages = new Map<string, number>();
+
+  let nextPageNumber = FIRST_PDF_PAGE;
+
+  for (const sequence of project.sequences) {
+    sequenceStartPages.set(
+      sequence.id,
+      nextPageNumber
+    );
+
+    nextPageNumber += pdfPageCounts[sequence.id] ?? 1;
+  }
+
+
+  
+  const updatePdfPageCount = (
+    sequenceId: string,
+    count: number
+  ) => {
+    setPdfPageCounts((current) => {
+      if (current[sequenceId] === count) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [sequenceId]: count,
+      };
+    });
+  };
 
   
   const historyRef = useRef<{
@@ -68,6 +137,21 @@ export default function App() {
   const [blockSearch, setBlockSearch] = useState('');
 
   
+  
+  const applyWorkbook = (nextWorkbook: Workbook) => {
+    setProject((current) => ({
+      ...current,
+      sequences: current.sequences.map((sequence) =>
+        sequence.id === activeSequenceId
+          ? {
+              ...nextWorkbook,
+              id: sequence.id,
+            }
+          : sequence
+      ),
+    }));
+  };
+
   const update = (nextWorkbook: Workbook) => {
     if (nextWorkbook === workbook) return;
 
@@ -80,24 +164,27 @@ export default function App() {
 
     history.future = [];
 
-    setWorkbook(nextWorkbook);
+    applyWorkbook(nextWorkbook);
     setHistoryVersion((version) => version + 1);
   };
 
+
+  
   
   useEffect(() => {
     try {
       localStorage.setItem(
-        'cuadernillo-react',
-        JSON.stringify(workbook)
+        PROJECT_STORAGE_KEY,
+        JSON.stringify(project)
       );
     } catch (error) {
       console.error(
-        'No se pudo guardar el cuadernillo:',
+        'No se pudo guardar el proyecto:',
         error
       );
     }
-  }, [workbook]);
+  }, [project]);
+
 
   
   const undo = () => {
@@ -110,7 +197,7 @@ export default function App() {
     history.past = history.past.slice(0, -1);
     history.future = [workbook, ...history.future];
 
-    setWorkbook(previous);
+    applyWorkbook(previous);
     setHistoryVersion((version) => version + 1);
   };
 
@@ -127,7 +214,7 @@ export default function App() {
       workbook,
     ];
 
-    setWorkbook(next);
+    applyWorkbook(next);
     setHistoryVersion((version) => version + 1);
   };
 
@@ -333,6 +420,107 @@ export default function App() {
     );
     };
 
+        
+    const resetHistory = () => {
+      historyRef.current = {
+        past: [],
+        future: [],
+      };
+
+      setHistoryVersion((version) => version + 1);
+    };
+
+    const selectSequence = (id: string) => {
+      if (id === activeSequenceId) return;
+
+      setActiveSequenceId(id);
+      setSelected(null);
+      resetHistory();
+    };
+
+    
+    const activeSequenceIndex = project.sequences.findIndex(
+      (sequence) => sequence.id === activeSequenceId
+    );
+
+    const moveSequence = (direction: number) => {
+      const target = activeSequenceIndex + direction;
+
+      if (
+        activeSequenceIndex < 0 ||
+        target < 0 ||
+        target >= project.sequences.length
+      ) {
+        return;
+      }
+
+      const reordered = [...project.sequences];
+
+      const [moved] = reordered.splice(activeSequenceIndex, 1);
+      reordered.splice(target, 0, moved);
+
+      setProject((current) => ({
+        ...current,
+        sequences: reordered.map((sequence, index) => ({
+          ...sequence,
+          sequence: index + 1,
+        })),
+      }));
+
+      resetHistory();
+    };
+
+
+    const addSequence = () => {
+      const nextNumber =
+        Math.max(
+          0,
+          ...project.sequences.map(
+            (sequence) => sequence.sequence
+          )
+        ) + 1;
+
+      const sequence = newSequence(nextNumber);
+
+      setProject((current) => ({
+        ...current,
+        sequences: [...current.sequences, sequence],
+      }));
+
+      selectSequence(sequence.id);
+    };
+
+    const deleteSequence = () => {
+      if (project.sequences.length <= 1) {
+        alert('El cuadernillo debe conservar al menos una secuencia.');
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `¿Eliminar la secuencia "${workbook.title}"?\n\n` +
+        'También se eliminarán todos sus bloques.'
+      );
+
+      if (!confirmed) return;
+
+      const remaining = project.sequences
+      .filter(
+        (sequence) => sequence.id !== activeSequenceId
+      )
+      .map((sequence, index) => ({
+        ...sequence,
+        sequence: index + 1,
+      }));
+
+      setProject((current) => ({
+        ...current,
+        sequences: remaining,
+      }));
+
+      setActiveSequenceId(remaining[0].id);
+      setSelected(null);
+      resetHistory();
+    };
 
   
     const makeAllAutomatic = () => {
@@ -347,43 +535,90 @@ export default function App() {
 
 
   const exportJSON = () => {
-    const blob = new Blob([JSON.stringify(workbook, null, 2)], {
+    const blob = new Blob([JSON.stringify(project, null, 2)], {
       type: 'application/json',
     });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
 
     anchor.href = url;
-    anchor.download = 'cuadernillo-quimica.json';
+    anchor.download = 'cuadernillo-completo.json';
     anchor.click();
     URL.revokeObjectURL(url);
   };
 
+  
   const importJSON = async (file: File) => {
     try {
       const text = await file.text();
-      const imported = JSON.parse(text) as Workbook;
+      const data: unknown = JSON.parse(text);
 
-      if (
-        !imported ||
-        !Array.isArray(imported.blocks) ||
-        typeof imported.title !== 'string'
-      ) {
+      if (!data || typeof data !== 'object') {
         throw new Error('Formato inválido');
       }
 
-      historyRef.current = {
-        past: [],
-        future: [],
-      };
+      const value = data as Record<string, unknown>;
 
-      setWorkbook(imported);
-      setHistoryVersion((version) => version + 1);
+      let imported: WorkbookProject;
+
+      // Formato nuevo: proyecto con varias secuencias.
+      if (Array.isArray(value.sequences)) {
+        const sequences = value.sequences;
+
+        if (
+          sequences.length === 0 ||
+          sequences.some(
+            (sequence) =>
+              !sequence ||
+              typeof sequence !== 'object' ||
+              !Array.isArray(sequence.blocks) ||
+              typeof sequence.title !== 'string' ||
+              typeof sequence.subtitle !== 'string'
+          )
+        ) {
+          throw new Error('Secuencias inválidas');
+        }
+
+        const normalized = sequences.map(
+          (sequence, index) => ({
+            ...(sequence as WorkbookSequence),
+            id: crypto.randomUUID(),
+            sequence: index + 1,
+          })
+        );
+
+        imported = {
+          id: crypto.randomUUID(),
+          name:
+            typeof value.name === 'string'
+              ? value.name
+              : 'Mi cuadernillo',
+          sequences: normalized,
+        };
+      }
+      // Formato antiguo: una sola secuencia.
+      else if (
+        Array.isArray(value.blocks) &&
+        typeof value.title === 'string' &&
+        typeof value.subtitle === 'string'
+      ) {
+        imported = fromLegacyWorkbook(
+          value as Workbook
+        );
+      } else {
+        throw new Error('Formato no reconocido');
+      }
+
+      setProject(imported);
+      setActiveSequenceId(imported.sequences[0].id);
       setSelected(null);
-    } catch {
-      alert('No se pudo leer el proyecto JSON');
+      resetHistory();
+    } catch (error) {
+      console.error(error);
+      alert('No se pudo importar el proyecto JSON.');
     }
   };
+
 
   return (
     <>
@@ -441,9 +676,138 @@ export default function App() {
             Migrar contenido
             </button> */}
 
-          <button onClick={() => window.print()}>Imprimir / PDF</button>
+          
+          <div className="pdf-toolbar-actions">
+            <select
+              value={pdfScope}
+              onChange={(event) =>
+                setPdfScope(
+                  event.target.value as 'all' | 'current'
+                )
+              }
+              aria-label="Contenido del PDF"
+            >
+              <option value="all">
+                Cuadernillo completo
+              </option>
+
+              <option value="current">
+                Secuencia actual
+              </option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() => window.print()}
+            >
+              Imprimir / PDF
+            </button>
+          </div>
+
         </div>
       </header>
+
+            
+      <div className="sequence-toolbar">
+        <div className="sequence-toolbar-info">
+          <strong>{project.name}</strong>
+          <span>
+            {project.sequences.length} secuencias
+          </span>
+        </div>
+
+        <select
+          value={activeSequenceId}
+          onChange={(event) =>
+            selectSequence(event.target.value)
+          }
+          aria-label="Seleccionar secuencia"
+        >
+          {project.sequences.map((sequence) => (
+            <option
+              key={sequence.id}
+              value={sequence.id}
+            >
+              Secuencia {sequence.sequence}: {sequence.title}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="button"
+          disabled={activeSequenceIndex <= 0}
+          onClick={() => moveSequence(-1)}
+          title="Mover secuencia hacia arriba"
+        >
+          ↑
+        </button>
+
+        <button
+          type="button"
+          disabled={
+            activeSequenceIndex < 0 ||
+            activeSequenceIndex >= project.sequences.length - 1
+          }
+          onClick={() => moveSequence(1)}
+          title="Mover secuencia hacia abajo"
+        >
+          ↓
+        </button>
+
+        <button
+          type="button"
+          onClick={addSequence}
+        >
+          + Nueva secuencia
+        </button>
+
+        <button
+          type="button"
+          className="sequence-delete-button"
+          onClick={deleteSequence}
+          disabled={project.sequences.length <= 1}
+        >
+          Eliminar secuencia
+        </button>
+      </div>
+
+      
+      <div className="sequence-content-settings">
+        <label>
+          Número de contenido
+          <input
+            type="number"
+            min={1}
+            value={workbook.contentNumber ?? ''}
+            placeholder="Ej. 7"
+            onChange={(event) =>
+              update({
+                ...workbook,
+                contentNumber:
+                  event.target.value === ''
+                    ? undefined
+                    : Math.max(1, Number(event.target.value)),
+              })
+            }
+          />
+        </label>
+
+        <label>
+          Nombre del contenido curricular
+          <input
+            type="text"
+            value={workbook.contentTitle ?? ''}
+            placeholder="Ej. La tabla periódica"
+            onChange={(event) =>
+              update({
+                ...workbook,
+                contentTitle: event.target.value,
+              })
+            }
+          />
+        </label>
+      </div>
+
 
       
         {showBlockSelector && (
@@ -572,11 +936,20 @@ export default function App() {
       </aside>
 
 
+        
         <PagePreview
           workbook={workbook}
           selected={selected}
           onSelect={setSelected}
+          pageStart={
+            sequenceStartPages.get(activeSequenceId) ??
+            FIRST_PDF_PAGE
+          }
+          onPageCountChange={(count) =>
+            updatePdfPageCount(activeSequenceId, count)
+          }
         />
+
 
         <Inspector
           workbook={workbook}
@@ -585,6 +958,42 @@ export default function App() {
           onBlockChange={updateBlock}
         />
       </main>
+      
+      
+      <div className="pdf-print-root">
+        {project.sequences.map((sequence) => {
+          const shouldPrint =
+            pdfScope === 'all' ||
+            sequence.id === activeSequenceId;
+
+          return (
+            <div
+              key={sequence.id}
+              className={
+                shouldPrint
+                  ? 'pdf-sequence-container'
+                  : 'pdf-sequence-container pdf-skip-sequence'
+              }
+            >
+              <PagePreview
+                workbook={sequence}
+                selected={null}
+                onSelect={() => {}}
+                pageStart={
+                  sequenceStartPages.get(sequence.id) ??
+                  FIRST_PDF_PAGE
+                }
+                className="pdf-sequence-pages"
+                onPageCountChange={(count) =>
+                  updatePdfPageCount(sequence.id, count)
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+
+
     </>
   );
 }

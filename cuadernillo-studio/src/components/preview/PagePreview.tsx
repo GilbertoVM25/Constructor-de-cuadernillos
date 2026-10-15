@@ -1,5 +1,6 @@
 import { blockThemes } from '../../styles/blockThemes';
 import {
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -32,11 +33,17 @@ const colors: Record<string, string> = {
   activity: '#0863db',
 };
 
+
 type PreviewProps = {
   workbook: Workbook;
   selected: string | null;
   onSelect: (id: string) => void;
+
+  pageStart?: number;
+  className?: string;
+  onPageCountChange?: (count: number) => void;
 };
+
 
 
 
@@ -512,21 +519,41 @@ function Header({
   );
 }
 
-function Footer({ page }: { page: number }) {
+
+
+function Footer({
+  pageNumber,
+  workbook,
+}: {
+  pageNumber: number;
+  workbook: Workbook;
+}) {
   return (
     <footer>
-      Contenido 1&nbsp; | &nbsp;
-      Los hitos del conocimiento científico
-      y tecnológico
-      <span>{page + 4}</span>
+      <span className="footer-content">
+        {workbook.contentNumber
+          ? `Contenido ${workbook.contentNumber}`
+          : 'Contenido sin asignar'}
+
+        {workbook.contentTitle?.trim()
+          ? ` · ${workbook.contentTitle}`
+          : ''}
+      </span>
+
+      <span>{pageNumber}</span>
     </footer>
   );
 }
+
+
 
 export function PagePreview({
   workbook,
   selected,
   onSelect,
+  pageStart = 5,
+  className = '',
+  onPageCountChange,
 }: PreviewProps) {
   const [measurements, setMeasurements] = useState<{
     blocks: BlockMeasurements;
@@ -654,9 +681,13 @@ export function PagePreview({
     [workbook.blocks, measurements]
   );
 
+  useEffect(() => {
+    onPageCountChange?.(pages.length);
+  }, [pages.length, onPageCountChange]);
+
 
   return (
-    <div className="pages">
+    <div className={`pages ${className}`}>
       {/* Bloques invisibles para medir alturas. */}
       <div
         className="pagination-measurer"
@@ -710,7 +741,10 @@ export function PagePreview({
       >
         <Header workbook={workbook} />
         <div className="paper-rows" />
-        <Footer page={0} />
+        <Footer
+          pageNumber={pageStart}
+          workbook={workbook}
+        />
       </div>
 
       {/* Páginas visibles. */}
@@ -736,7 +770,10 @@ export function PagePreview({
             </div>
           )}
 
-          <Footer page={index} />
+          <Footer
+            pageNumber={pageStart + index}
+            workbook={workbook}
+          />
         </div>
       ))}
     </div>

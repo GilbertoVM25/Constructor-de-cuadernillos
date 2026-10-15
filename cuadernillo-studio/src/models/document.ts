@@ -118,7 +118,21 @@ export type Workbook = {
   subtitle: string;
   sequence: number;
   blocks: Block[];
+  contentNumber?: number;
+  contentTitle?: string;
 };
+
+
+export type WorkbookSequence = Workbook & {
+  id: string;
+};
+
+export type WorkbookProject = {
+  id: string;
+  name: string;
+  sequences: WorkbookSequence[];
+};
+
 
 
 export type WorkbookTable = {

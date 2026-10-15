@@ -1593,3 +1593,297 @@ html,body,#root{width:100%;min-width:0;min-height:100%;max-width:none;margin:0;p
 .toolbar .history-button:not(:disabled):hover {
   background: #38577c;
 }
+
+
+/* ==========================================
+   ADMINISTRADOR DE SECUENCIAS v1.5
+   ========================================== */
+
+.sequence-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  padding: 12px 15px;
+  background: #ffffff;
+  border-bottom: 1px solid #d1dbe9;
+}
+
+.sequence-toolbar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 150px;
+}
+
+.sequence-toolbar-info strong {
+  color: #20324c;
+  font-size: 13px;
+}
+
+.sequence-toolbar-info span {
+  color: #728098;
+  font-size: 11px;
+}
+
+.sequence-toolbar select {
+  flex: 1;
+  min-width: 190px;
+  max-width: 520px;
+
+  padding: 9px 11px;
+  border: 1px solid #d1dbe9;
+  border-radius: 8px;
+  background: #f8faff;
+  font-size: 12px;
+  color: #20324c;
+}
+
+.sequence-toolbar button {
+  padding: 9px 12px;
+  border: 1px solid #abc6ec;
+  border-radius: 8px;
+  background: #eaf2ff;
+  color: #1456b6;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sequence-toolbar button:hover:not(:disabled) {
+  background: #dbeaff;
+}
+
+.sequence-toolbar .sequence-delete-button {
+  background: #fff5f5;
+  color: #b42318;
+  border-color: #edc2c2;
+}
+
+.sequence-toolbar .sequence-delete-button:hover:not(:disabled) {
+  background: #ffe5e5;
+}
+
+.sequence-toolbar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 650px) {
+  .sequence-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sequence-toolbar select {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+@media print {
+  .sequence-toolbar {
+    display: none !important;
+  }
+}
+
+
+/* Configuración del contenido curricular */
+
+.sequence-content-settings {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 15px;
+  background: #f8faff;
+  border-bottom: 1px solid #d1dbe9;
+}
+
+.sequence-content-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sequence-content-settings input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #cdd7e7;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+footer .footer-content {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: #34506b;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 650px) {
+  .sequence-content-settings {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .sequence-content-settings {
+    display: none !important;
+  }
+}
+
+
+/* ==========================================
+   EXPORTACIÓN PDF DEL CUADERNILLO
+   ========================================== */
+
+.pdf-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-toolbar-actions select {
+  padding: 8px 10px;
+  color: #ffffff;
+  background: #294264;
+  border: 1px solid #61718a;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+/*
+ * La versión imprimible se mantiene fuera
+ * de la pantalla, pero conserva sus medidas.
+ */
+@media screen {
+  .pdf-print-root {
+    position: absolute;
+    left: -100000px;
+    top: 0;
+    width: 210mm;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .pdf-print-root .pages {
+    width: 210mm;
+    overflow: visible;
+  }
+}
+
+/* Impresión */
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  .appbar,
+  .sequence-toolbar,
+  .sequence-content-settings,
+  .workspace,
+  .block-selector-overlay {
+    display: none !important;
+  }
+
+  .pdf-print-root {
+    display: block !important;
+    position: static !important;
+    width: 210mm;
+    visibility: visible !important;
+    pointer-events: none;
+  }
+
+  .pdf-print-root .pages {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    width: 210mm;
+    gap: 0;
+    overflow: visible;
+  }
+
+  .pdf-print-root .paper {
+    display: flex;
+    width: 210mm;
+    height: 297mm;
+    min-height: 0;
+    box-shadow: none;
+
+    break-after: page;
+    page-break-after: always;
+  }
+
+  /*
+   * La última página de cada secuencia
+   * debe continuar con la siguiente.
+   */
+  .pdf-print-root
+  .pages:not(:last-child)
+  .paper:last-child {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  /*
+   * La última página del cuadernillo
+   * no debe generar otra página en blanco.
+   */
+  .pdf-print-root
+  .pages:last-child
+  .paper:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .pdf-print-root .pagination-measurer,
+  .pdf-print-root .pagination-probe {
+    display: none !important;
+  }
+}
+
+@media (max-width: 650px) {
+  .pdf-toolbar-actions {
+    flex-wrap: wrap;
+  }
+}
+
+
+/* Secuencias medidas, pero excluidas del PDF */
+
+.pdf-sequence-container {
+  width: 210mm;
+}
+
+@media print {
+  .pdf-skip-sequence {
+    display: none !important;
+  }
+
+  .pdf-print-root
+  .pdf-sequence-container {
+    break-after: auto;
+  }
+
+  .pdf-print-root
+  .pdf-sequence-container
+  .paper:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .pdf-print-root
+  .pdf-sequence-container:not(.pdf-skip-sequence)
+  ~ .pdf-sequence-container:not(.pdf-skip-sequence) {
+    break-before: page;
+    page-break-before: always;
+  }
+}
