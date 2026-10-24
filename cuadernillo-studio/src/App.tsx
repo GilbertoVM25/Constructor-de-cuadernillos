@@ -10,6 +10,7 @@ import type {
   Workbook,
   WorkbookProject,
   WorkbookSequence,
+  CoverSettings
 } from './models/document';
 import {
   loadProject,
@@ -18,6 +19,7 @@ import {
   PROJECT_STORAGE_KEY,
 } from './engine/project';
 import { createBlockTemplate } from './blocks/blockTemplates';
+import { importWorkbookJSON } from './engine/importWorkbookJSON';
 import {
   migrateWorkbookContent,
 } from './engine/migrateContent';
@@ -47,6 +49,38 @@ import {
 
 import { SortableLibraryBlock } from './components/editor/SortableLibraryBlock';
 
+import {
+  IndexPages,
+  getIndexPageCount,
+} from './components/preview/IndexPages';
+
+import {
+  CoverPage,
+  PresentationPage,
+} from './components/preview/PreliminaryPages';
+
+import { PdfExportDialog } from './components/editor/PdfExportDialog';
+
+import {
+  ACTIVE_PROJECT_KEY,
+  initializeProjectStorage,
+  saveProject,
+  getProject,
+  getProjectSummaries,
+  deleteStoredProject,
+  type ProjectSummary,
+} from './engine/projectStorage';
+
+import {
+  ProjectManager,
+} from './components/editor/ProjectManager';
+
+import {
+  duplicateBlockData,
+  duplicateSequenceData,
+} from './engine/duplicateContent';
+
+
 
 export default function App() {
   
@@ -59,15 +93,88 @@ export default function App() {
   );
 
   
+  const [storageReady, setStorageReady] =
+    useState(false);
+  
+  const saveRevisionRef = useRef(0);
+  
+  const [saveStatus, setSaveStatus] = useState<
+    'loading' | 'saving' | 'saved' | 'error'
+  >('loading');
+
+  const [projectList, setProjectList] =
+    useState<ProjectSummary[]>([]);
+
+  const [showProjectManager, setShowProjectManager] =
+    useState(false);
+
+  const [newProjectName, setNewProjectName] =
+    useState('');
+
+  const [projectManagerBusy, setProjectManagerBusy] =
+    useState(false);
+  
+  
+  useEffect(() => {
+    let cancelled = false;
+
+    const initialize = async () => {
+      try {
+        const legacy = loadProject(initialWorkbook);
+
+        const result = await initializeProjectStorage(
+          legacy
+        );
+
+        if (cancelled) return;
+
+        setProject(result.activeProject);
+        setActiveSequenceId(
+          result.activeProject.sequences[0].id
+        );
+
+        setSelected(null);
+        setProjectList(result.projects);
+
+        localStorage.setItem(
+          ACTIVE_PROJECT_KEY,
+          result.activeProject.id
+        );
+
+        setSaveStatus('saved');
+        setStorageReady(true);
+      } catch (error) {
+        console.error(
+          'No se pudo cargar el almacenamiento:',
+          error
+        );
+
+        if (!cancelled) {
+          setSaveStatus('error');
+        }
+      }
+    };
+
+    void initialize();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  
   const [pdfScope, setPdfScope] = useState<
     'all' | 'current'
   >('all');
+
+  const [includeIndex, setIncludeIndex] = useState(true);
 
   const [pdfPageCounts, setPdfPageCounts] = useState<
     Record<string, number>
   >({});
 
-  const FIRST_PDF_PAGE = 5;
+  const [firstPdfPage, setFirstPdfPage] = useState(5);
+  const FIRST_PDF_PAGE = firstPdfPage;
 
 
   const workbook =
@@ -76,17 +183,70 @@ export default function App() {
     ) ?? project.sequences[0];
   
   
+  const [showPdfSettings, setShowPdfSettings] =
+    useState(false);
+
+  const [includeCover, setIncludeCover] =
+    useState(true);
+
+  const [includePresentation, setIncludePresentation] =
+    useState(false);
+
+  const coverSettings: CoverSettings = {
+    title: project.cover?.title ?? project.name,
+    subtitle: project.cover?.subtitle ?? '',
+    subject: project.cover?.subject ?? 'Química',
+    grade: project.cover?.grade ?? '3.º de secundaria',
+    school: project.cover?.school ?? '',
+    schoolYear: project.cover?.schoolYear ?? '',
+    author: project.cover?.author ?? '',
+    presentation: project.cover?.presentation ?? '',
+    template: project.cover?.template ?? 'academic',
+    accentColor: project.cover?.accentColor ?? '#1766c2',
+    coverImage: project.cover?.coverImage ?? '',
+    schoolLogo: project.cover?.schoolLogo ?? '',
+  };
+
+  const updateCover = (
+    field: keyof CoverSettings,
+    value: string
+  ) => {
+    setProject((current) => ({
+      ...current,
+      cover: {
+        title: current.cover?.title ?? current.name,
+        subtitle: current.cover?.subtitle ?? '',
+        subject: current.cover?.subject ?? 'Química',
+        grade: current.cover?.grade ?? '3.º de secundaria',
+        school: current.cover?.school ?? '',
+        schoolYear: current.cover?.schoolYear ?? '',
+        author: current.cover?.author ?? '',
+        presentation: current.cover?.presentation ?? '',
+        template: project.cover?.template ?? 'academic',
+        accentColor: project.cover?.accentColor ?? '#1766c2',
+        coverImage: project.cover?.coverImage ?? '',
+        schoolLogo: project.cover?.schoolLogo ?? '',
+        [field]: value,
+      },
+    }));
+  };
+
   
   const pdfSequences =
     pdfScope === 'all'
       ? project.sequences
       : [workbook];
 
-  // Numeración global del cuadernillo.
-  // No depende de la opción de impresión.
+  
+  const indexPageCount = includeIndex
+    ? getIndexPageCount(project.sequences.length)
+    : 0;
+
   const sequenceStartPages = new Map<string, number>();
 
-  let nextPageNumber = FIRST_PDF_PAGE;
+  // Reservar primero las páginas del índice.
+  let nextPageNumber =
+    FIRST_PDF_PAGE + indexPageCount;
 
   for (const sequence of project.sequences) {
     sequenceStartPages.set(
@@ -96,6 +256,7 @@ export default function App() {
 
     nextPageNumber += pdfPageCounts[sequence.id] ?? 1;
   }
+
 
 
   
@@ -133,6 +294,8 @@ export default function App() {
 
 
   const [selected, setSelected] = useState<string | null>('c');
+  const [selectedElementId, setSelectedElementId] =
+    useState<string | null>(null);
   const [showBlockSelector, setShowBlockSelector] = useState(false);
   const [blockSearch, setBlockSearch] = useState('');
 
@@ -171,19 +334,39 @@ export default function App() {
 
   
   
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        PROJECT_STORAGE_KEY,
-        JSON.stringify(project)
-      );
-    } catch (error) {
-      console.error(
-        'No se pudo guardar el proyecto:',
-        error
-      );
-    }
-  }, [project]);
+  
+  
+useEffect(() => {
+  if (!storageReady) return;
+
+  const revision = ++saveRevisionRef.current;
+
+  setSaveStatus('saving');
+
+  const timeout = window.setTimeout(() => {
+    void saveProject(project)
+      .then(() => {
+        if (saveRevisionRef.current !== revision) {
+          return;
+        }
+
+        setSaveStatus('saved');
+      })
+      .catch((error) => {
+        console.error('Error de guardado:', error);
+
+        if (saveRevisionRef.current === revision) {
+          setSaveStatus('error');
+        }
+      });
+  }, 600);
+
+  return () => {
+    window.clearTimeout(timeout);
+  };
+}, [project, storageReady]);
+
+
 
 
   
@@ -420,6 +603,47 @@ export default function App() {
     );
     };
 
+    
+    const duplicateBlock = () => {
+      if (!selected) return;
+
+      const index = workbook.blocks.findIndex(
+        (block) => block.id === selected
+      );
+
+      if (index === -1) return;
+
+      const original = workbook.blocks[index];
+      const copy = duplicateBlockData(original);
+
+      const nextBlocks = [...workbook.blocks];
+
+      // Insertar inmediatamente después del original.
+      nextBlocks.splice(index + 1, 0, copy);
+
+      update({
+        ...workbook,
+        blocks: nextBlocks,
+      });
+
+      // Seleccionar automáticamente la copia.
+      setSelected(copy.id);
+    };
+
+    
+    const selectBlock = (blockId: string) => {
+      setSelected(blockId);
+      setSelectedElementId(null);
+    };
+
+    const selectContentElement = (
+      blockId: string,
+      elementId: string
+    ) => {
+      setSelected(blockId);
+      setSelectedElementId(elementId);
+    };
+
         
     const resetHistory = () => {
       historyRef.current = {
@@ -435,6 +659,7 @@ export default function App() {
 
       setActiveSequenceId(id);
       setSelected(null);
+      setSelectedElementId(null);
       resetHistory();
     };
 
@@ -489,6 +714,44 @@ export default function App() {
 
       selectSequence(sequence.id);
     };
+
+    
+    const duplicateSequence = () => {
+      const index = project.sequences.findIndex(
+        (sequence) => sequence.id === activeSequenceId
+      );
+
+      if (index === -1) return;
+
+      const original = project.sequences[index];
+
+      const copy = duplicateSequenceData(original);
+
+      setProject((current) => {
+        const nextSequences = [...current.sequences];
+
+        nextSequences.splice(index + 1, 0, copy);
+
+        return {
+          ...current,
+          sequences: nextSequences.map(
+            (sequence, position) => ({
+              ...sequence,
+              sequence: position + 1,
+            })
+          ),
+        };
+      });
+
+      // Abrir la nueva secuencia.
+      setActiveSequenceId(copy.id);
+
+      // Seleccionar su primer bloque, si existe.
+      setSelected(copy.blocks[0]?.id ?? null);
+
+      resetHistory();
+    };
+
 
     const deleteSequence = () => {
       if (project.sequences.length <= 1) {
@@ -552,73 +815,274 @@ export default function App() {
     try {
       const text = await file.text();
       const data: unknown = JSON.parse(text);
+      const imported = importWorkbookJSON(data);
 
-      if (!data || typeof data !== 'object') {
-        throw new Error('Formato inválido');
-      }
+      // Guardar antes de sustituir el proyecto visible.
+      await saveProject(imported);
+      await refreshProjectList();
 
-      const value = data as Record<string, unknown>;
-
-      let imported: WorkbookProject;
-
-      // Formato nuevo: proyecto con varias secuencias.
-      if (Array.isArray(value.sequences)) {
-        const sequences = value.sequences;
-
-        if (
-          sequences.length === 0 ||
-          sequences.some(
-            (sequence) =>
-              !sequence ||
-              typeof sequence !== 'object' ||
-              !Array.isArray(sequence.blocks) ||
-              typeof sequence.title !== 'string' ||
-              typeof sequence.subtitle !== 'string'
-          )
-        ) {
-          throw new Error('Secuencias inválidas');
-        }
-
-        const normalized = sequences.map(
-          (sequence, index) => ({
-            ...(sequence as WorkbookSequence),
-            id: crypto.randomUUID(),
-            sequence: index + 1,
-          })
-        );
-
-        imported = {
-          id: crypto.randomUUID(),
-          name:
-            typeof value.name === 'string'
-              ? value.name
-              : 'Mi cuadernillo',
-          sequences: normalized,
-        };
-      }
-      // Formato antiguo: una sola secuencia.
-      else if (
-        Array.isArray(value.blocks) &&
-        typeof value.title === 'string' &&
-        typeof value.subtitle === 'string'
-      ) {
-        imported = fromLegacyWorkbook(
-          value as Workbook
-        );
-      } else {
-        throw new Error('Formato no reconocido');
-      }
-
+      localStorage.setItem(ACTIVE_PROJECT_KEY, imported.id);
       setProject(imported);
       setActiveSequenceId(imported.sequences[0].id);
       setSelected(null);
+      setSelectedElementId(null);
       resetHistory();
+      alert('Cuadernillo importado correctamente.');
     } catch (error) {
       console.error(error);
-      alert('No se pudo importar el proyecto JSON.');
+      const message = error instanceof Error ? error.message : 'Error desconocido';
+      alert(`No se pudo importar el proyecto JSON.\n\n${message}`);
     }
   };
 
+  const refreshProjectList = async () => {
+    const summaries = await getProjectSummaries();
+    setProjectList(summaries);
+  };
+
+  
+  const openProject = async (id: string) => {
+    if (id === project.id) {
+      setShowProjectManager(false);
+      return;
+    }
+
+    setProjectManagerBusy(true);
+
+    try {
+      // No perder cambios pendientes antes del cambio.
+      await saveProject(project);
+
+      const nextProject = await getProject(id);
+
+      if (!nextProject) {
+        throw new Error('Proyecto no encontrado');
+      }
+
+      setProject(nextProject);
+      setActiveSequenceId(nextProject.sequences[0].id);
+      setSelected(null);
+      resetHistory();
+
+      localStorage.setItem(
+        ACTIVE_PROJECT_KEY,
+        nextProject.id
+      );
+
+      setShowProjectManager(false);
+    } catch (error) {
+      console.error(error);
+      alert('No se pudo abrir el cuadernillo.');
+    } finally {
+      setProjectManagerBusy(false);
+    }
+  };
+
+  
+  const createNewProject = async () => {
+    const name = newProjectName.trim();
+
+    if (!name) {
+      alert('Escribe el nombre del cuadernillo.');
+      return;
+    }
+
+    setProjectManagerBusy(true);
+
+    try {
+      await saveProject(project);
+
+      const nextProject = fromLegacyWorkbook({
+        ...initialWorkbook,
+        title: 'Nueva secuencia',
+        subtitle: '',
+        sequence: 1,
+        blocks: [],
+      });
+
+      nextProject.name = name;
+
+      await saveProject(nextProject);
+
+      setProject(nextProject);
+      setActiveSequenceId(nextProject.sequences[0].id);
+      setSelected(null);
+      resetHistory();
+
+      localStorage.setItem(
+        ACTIVE_PROJECT_KEY,
+        nextProject.id
+      );
+
+      await refreshProjectList();
+
+      setNewProjectName('');
+      setShowProjectManager(false);
+    } catch (error) {
+      console.error(error);
+      alert('No se pudo crear el cuadernillo.');
+    } finally {
+      setProjectManagerBusy(false);
+    }
+  };
+
+  
+  const duplicateProject = async (id: string) => {
+    setProjectManagerBusy(true);
+
+    try {
+      await saveProject(project);
+
+      const original = await getProject(id);
+
+      if (!original) {
+        throw new Error('Proyecto no encontrado');
+      }
+
+      const copy: WorkbookProject = {
+        ...structuredClone(original),
+        id: crypto.randomUUID(),
+        name: `${original.name} (copia)`,
+        sequences: original.sequences.map(
+          (sequence) => ({
+            ...structuredClone(sequence),
+            id: crypto.randomUUID(),
+          })
+        ),
+      };
+
+      await saveProject(copy);
+      await refreshProjectList();
+    } catch (error) {
+      console.error(error);
+      alert('No se pudo duplicar el cuadernillo.');
+    } finally {
+      setProjectManagerBusy(false);
+    }
+  };
+
+  
+  const renameProject = async (id: string) => {
+    const item = projectList.find(
+      (entry) => entry.id === id
+    );
+
+    if (!item) return;
+
+    const name = window.prompt(
+      'Nuevo nombre del cuadernillo:',
+      item.name
+    )?.trim();
+
+    if (!name || name === item.name) return;
+
+    setProjectManagerBusy(true);
+
+    try {
+      await saveProject(project);
+
+      const stored = await getProject(id);
+
+      if (!stored) {
+        throw new Error('Proyecto no encontrado');
+      }
+
+      const renamed = {
+        ...stored,
+        name,
+      };
+
+      await saveProject(renamed);
+
+      if (id === project.id) {
+        setProject(renamed);
+      }
+
+      await refreshProjectList();
+    } catch (error) {
+      console.error(error);
+      alert('No se pudo cambiar el nombre.');
+    } finally {
+      setProjectManagerBusy(false);
+    }
+  };
+
+  
+  const removeProject = async (id: string) => {
+    if (projectList.length <= 1) {
+      alert('Debes conservar al menos un cuadernillo.');
+      return;
+    }
+
+    const item = projectList.find(
+      (entry) => entry.id === id
+    );
+
+    if (!item) return;
+
+    if (!window.confirm(
+      `¿Eliminar definitivamente "${item.name}"?`
+    )) {
+      return;
+    }
+
+    setProjectManagerBusy(true);
+
+    try {
+      // Guardar primero el cuadernillo activo.
+      // Solo si no es el que se eliminará.
+      if (project.id !== id) {
+        await saveProject(project);
+      }
+
+      await deleteStoredProject(id);
+
+      if (project.id === id) {
+        const remaining = await getProjectSummaries();
+        const replacement = await getProject(
+          remaining[0].id
+        );
+
+        if (!replacement) {
+          throw new Error('No existe otro proyecto');
+        }
+
+        setProject(replacement);
+        setActiveSequenceId(
+          replacement.sequences[0].id
+        );
+
+        setSelected(null);
+        resetHistory();
+
+        localStorage.setItem(
+          ACTIVE_PROJECT_KEY,
+          replacement.id
+        );
+      }
+
+      await refreshProjectList();
+    } catch (error) {
+      console.error(error);
+      alert('No se pudo eliminar el cuadernillo.');
+    } finally {
+      setProjectManagerBusy(false);
+    }
+  };
+
+  if (!storageReady) {
+    return (
+      <div className="project-loading">
+        <h2>Cuadernillo Studio</h2>
+        <p>
+          {saveStatus === 'error'
+            ? 'No se pudo acceder al almacenamiento. ' +
+              'Recarga la página para intentarlo otra vez.'
+            : 'Cargando tus cuadernillos...'}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -626,6 +1090,12 @@ export default function App() {
         <strong>
           ▦ Cuadernillo Studio <small>React · Primera etapa</small>
         </strong>
+        <span className={`save-status save-${saveStatus}`}>
+          {saveStatus === 'loading' && 'Cargando proyectos...'}
+          {saveStatus === 'saving' && 'Guardando...'}
+          {saveStatus === 'saved' && '✓ Guardado'}
+          {saveStatus === 'error' && '⚠ Error al guardar'}
+        </span>
 
         <div className="toolbar">
           {/* <button onClick={() => setShowBlockSelector(true)}>
@@ -652,7 +1122,20 @@ export default function App() {
           >
             ↷ Rehacer
           </button>
-
+          <button
+            type="button"
+            disabled={!storageReady}
+            onClick={() => {
+              void refreshProjectList()
+                .then(() => setShowProjectManager(true))
+                .catch((error) => {
+                  console.error(error);
+                  alert('No se pudieron cargar los proyectos.');
+                });
+            }}
+          >
+            Mis cuadernillos
+          </button>
           <button onClick={exportJSON}>Exportar JSON</button>
 
             {/* <button onClick={makeAllAutomatic}>
@@ -678,7 +1161,7 @@ export default function App() {
 
           
           <div className="pdf-toolbar-actions">
-            <select
+            {/* <select
               value={pdfScope}
               onChange={(event) =>
                 setPdfScope(
@@ -694,11 +1177,23 @@ export default function App() {
               <option value="current">
                 Secuencia actual
               </option>
-            </select>
+            </select> */}
+            
+            {/* <label className="pdf-index-toggle">
+              <input
+                type="checkbox"
+                checked={includeIndex}
+                onChange={(event) =>
+                  setIncludeIndex(event.target.checked)
+                }
+              />
+
+              Incluir índice
+            </label> */}
 
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={() => setShowPdfSettings(true)}
             >
               Imprimir / PDF
             </button>
@@ -760,6 +1255,16 @@ export default function App() {
         >
           + Nueva secuencia
         </button>
+
+        
+        <button
+          type="button"
+          onClick={duplicateSequence}
+          title="Duplicar la secuencia actual"
+        >
+          ⧉ Duplicar secuencia
+        </button>
+
 
         <button
           type="button"
@@ -918,6 +1423,18 @@ export default function App() {
         </div>
 
         <div className="library-footer">
+          
+          <button
+            type="button"
+            className="duplicate-block-button"
+            onClick={duplicateBlock}
+            disabled={!selectedBlock}
+            title="Crear una copia del bloque seleccionado"
+          >
+            <span aria-hidden="true">⧉</span>
+            Duplicar bloque
+          </button>
+
           <button
             type="button"
             className="delete-block-button"
@@ -941,6 +1458,9 @@ export default function App() {
           workbook={workbook}
           selected={selected}
           onSelect={setSelected}
+          selectedElementId={selectedElementId}
+          onSelectElement={selectContentElement}
+
           pageStart={
             sequenceStartPages.get(activeSequenceId) ??
             FIRST_PDF_PAGE
@@ -954,6 +1474,7 @@ export default function App() {
         <Inspector
           workbook={workbook}
           selected={selectedBlock}
+          selectedElementId={selectedElementId}
           onChange={update}
           onBlockChange={updateBlock}
         />
@@ -961,6 +1482,24 @@ export default function App() {
       
       
       <div className="pdf-print-root">
+        
+        {pdfScope === 'all' && includeCover && (
+          <CoverPage settings={coverSettings} />
+        )}
+
+        {pdfScope === 'all' && includePresentation && (
+          <PresentationPage settings={coverSettings} />
+        )}
+
+        
+        {includeIndex && pdfScope === 'all' && (
+          <IndexPages
+            sequences={project.sequences}
+            startPages={sequenceStartPages}
+            firstPage={FIRST_PDF_PAGE}
+          />
+        )}
+
         {project.sequences.map((sequence) => {
           const shouldPrint =
             pdfScope === 'all' ||
@@ -992,7 +1531,59 @@ export default function App() {
           );
         })}
       </div>
+      
+      {showProjectManager && (
+        <ProjectManager
+          projects={projectList}
+          activeProjectId={project.id}
+          newProjectName={newProjectName}
+          busy={projectManagerBusy}
 
+          onNameChange={setNewProjectName}
+          onCreate={() => void createNewProject()}
+          onOpen={(id) => void openProject(id)}
+          onDuplicate={(id) =>
+            void duplicateProject(id)
+          }
+          onRename={(id) => void renameProject(id)}
+          onDelete={(id) => void removeProject(id)}
+
+          onClose={() => setShowProjectManager(false)}
+        />
+      )}
+
+      {showPdfSettings && (
+        <PdfExportDialog
+          scope={pdfScope}
+          onScopeChange={setPdfScope}
+
+          includeCover={includeCover}
+          onIncludeCoverChange={setIncludeCover}
+
+          includePresentation={includePresentation}
+          onIncludePresentationChange={setIncludePresentation}
+
+          includeIndex={includeIndex}
+          onIncludeIndexChange={setIncludeIndex}
+
+          firstPage={firstPdfPage}
+          onFirstPageChange={setFirstPdfPage}
+
+          cover={coverSettings}
+          onCoverChange={updateCover}
+
+          onClose={() => setShowPdfSettings(false)}
+
+          onPrint={() => {
+            setShowPdfSettings(false);
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                window.print();
+              });
+            });
+          }}
+        />
+      )}
 
     </>
   );

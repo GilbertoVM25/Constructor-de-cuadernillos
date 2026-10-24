@@ -9,8 +9,12 @@ import type {
 
 import { createTable } from '../../blocks/tableTemplates';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import { RichTextEditor } from './RichTextEditor';
+
+import { TextImageEditor } from './TextImageEditor';
+import type { TextImageElement } from '../../models/document';
 
 import {
   DndContext,
@@ -34,6 +38,7 @@ import { SortableContentItem } from './SortableContentItem';
 
 type Props = {
   selected: Block;
+  selectedElementId?: string | null;
   onBlockChange: (
     id: string,
     patch: Partial<Block>
@@ -42,6 +47,7 @@ type Props = {
 
 export function ContentEditor({
   selected,
+  selectedElementId = null,
   onBlockChange,
 }: Props) {
   const elements = selected.elements ?? [];
@@ -78,6 +84,44 @@ export function ContentEditor({
 
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  
+  const editorRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!selectedElementId) return;
+
+    const exists = (selected.elements ?? []).some(
+      (element) => element.id === selectedElementId
+    );
+
+    if (!exists) return;
+
+    // Abrir el acordeón correspondiente.
+    setExpandedId(selectedElementId);
+
+    // Esperar a que React muestre su contenido.
+    const frame = requestAnimationFrame(() => {
+      const items =
+        editorRef.current?.querySelectorAll<HTMLElement>(
+          '[data-content-element-id]'
+        );
+
+      const target = Array.from(items ?? []).find(
+        (item) =>
+          item.dataset.contentElementId ===
+          selectedElementId
+      );
+
+      target?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [selected.id, selectedElementId]);
+
 
   const toggleElement = (id: string) => {
     setExpandedId((current) => current === id ? null : id);
@@ -129,6 +173,16 @@ export function ContentEditor({
     setExpandedId(id);
   };
 
+  const addTextImage = () => {
+  const id = crypto.randomUUID();
+  const element: TextImageElement = {
+    id, type: 'textImage', text: 'Escribe aquí el texto...',
+    side: 'right', textPercent: 60, gap: 8, imageHeight: 95,
+    images: [{ id: crypto.randomUUID(), src: '', caption: '' }],
+  };
+  save([...elements, element]);
+  setExpandedId(id);
+};
   
   const addImage = () => {
     const id = crypto.randomUUID();
@@ -168,6 +222,25 @@ export function ContentEditor({
     save([...elements, gallery]);
     setExpandedId(id);
   };
+
+  
+  const addResponseArea = () => {
+    const id = crypto.randomUUID();
+
+    save([
+      ...elements,
+      {
+        id,
+        type: 'responseArea',
+        style: 'lines',
+        height: 180,
+        label: '',
+      },
+    ]);
+
+    setExpandedId(id);
+  };
+
 
   const updateElement = (
     id: string,
@@ -367,7 +440,10 @@ export function ContentEditor({
 
 
   return (
-    <section className="content-editor">
+    <section
+      className="content-editor"
+      ref={editorRef}
+    >
       <hr />
 
       <h3>Contenido de la actividad</h3>
@@ -391,8 +467,15 @@ export function ContentEditor({
         <button type="button" onClick={addImage}>
           + Imagen
         </button>
+        <button type="button" onClick={addTextImage}>+ Texto + Imagen</button>
         <button type="button" onClick={addGallery}>
           + Galería
+        </button>
+        <button
+          type="button"
+          onClick={addResponseArea}
+        >
+          + Espacio de respuesta
         </button>
       </div>
 
@@ -409,6 +492,7 @@ export function ContentEditor({
             <SortableContentItem
               key={element.id}
               id={element.id}
+              selected={selectedElementId === element.id}
             >
               {({ attributes, listeners }) => (
                 <>
@@ -444,7 +528,9 @@ export function ContentEditor({
                             ? 'Tabla'
                             : element.type === 'image'
                               ? 'Imagen'
-                              : 'Galería'}
+                              : element.type === 'responseArea'
+                                ? 'Espacio de respuesta'
+                                : 'Galería'}
                     </span>
                   </span>
 
@@ -455,9 +541,11 @@ export function ContentEditor({
                         ? element.text.slice(0, 60) || 'Sin pregunta'
                         : element.type === 'table'
                           ? `${element.table.headers.length} columnas · ${element.table.rows.length} filas`
-                          : element.type === 'image'
-                            ? element.caption || 'Sin descripción'
-                            : `${element.images.length} imágenes`}
+                          : element.type === 'responseArea'
+                            ? `${element.style} · ${element.height} px`
+                            : element.type === 'image'
+                              ? element.caption || 'Sin descripción'
+                              : `${element.images.length} imágenes`}
                   </span>
                 </button>
               </div>
@@ -489,35 +577,44 @@ export function ContentEditor({
               hidden={expandedId !== element.id}
             >
 
+              
               {element.type === 'text' && (
-                <label>
-                  Contenido
-                  <textarea
-                    rows={4}
-                    value={element.content}
-                    onChange={(event) =>
+                <div className="content-rich-field">
+                  <span>Contenido</span>
+
+                  <RichTextEditor
+                    key={element.id}
+                    value={element.richHtml}
+                    legacyText={element.content}
+                    onChange={(html) =>
                       updateElement(element.id, {
-                        content: event.target.value,
+                        richHtml: html,
                       })
                     }
                   />
-                </label>
+                </div>
               )}
+
+              
 
               {element.type === 'question' && (
                 <>
-                  <label>
-                    Enunciado
-                    <textarea
-                      rows={3}
-                      value={element.text}
-                      onChange={(event) =>
+                  
+                  <div className="content-rich-field">
+                    <span>Enunciado</span>
+
+                    <RichTextEditor
+                      key={element.id}
+                      value={element.richHtml}
+                      legacyText={element.text}
+                      onChange={(html) =>
                         updateElement(element.id, {
-                          text: event.target.value,
+                          richHtml: html,
                         })
                       }
                     />
-                  </label>
+                  </div>
+
 
                   <label>
                     Líneas de respuesta
@@ -782,6 +879,12 @@ export function ContentEditor({
                 </div>
               )}
 
+              {element.type === 'textImage' && (
+                <TextImageEditor
+                  value={element}
+                  onChange={patch => updateElement(element.id, patch)}
+                />
+              )}
               
               {element.type === 'gallery' && (
                 <div className="content-gallery-editor">
@@ -878,6 +981,95 @@ export function ContentEditor({
                   </label>
                 </div>
               )}
+              
+              {element.type === 'responseArea' && (
+                <div className="response-area-editor">
+                  <label>
+                    Tipo de espacio
+
+                    <select
+                      value={element.style}
+                      onChange={(event) =>
+                        updateElement(element.id, {
+                          style: event.target.value as
+                            | 'lines'
+                            | 'blank'
+                            | 'grid'
+                            | 'drawing',
+                        })
+                      }
+                    >
+                      <option value="lines">
+                        Líneas para escribir
+                      </option>
+                      <option value="blank">
+                        Recuadro en blanco
+                      </option>
+                      <option value="grid">
+                        Cuadrícula
+                      </option>
+                      <option value="drawing">
+                        Espacio para dibujar
+                      </option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Instrucción o etiqueta (opcional)
+
+                    <input
+                      type="text"
+                      value={element.label}
+                      placeholder="Ej. Dibuja el modelo de una molécula"
+                      onChange={(event) =>
+                        updateElement(element.id, {
+                          label: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Altura: {element.height} px
+
+                    <input
+                      type="range"
+                      min={80}
+                      max={500}
+                      step={10}
+                      value={element.height}
+                      onChange={(event) =>
+                        updateElement(element.id, {
+                          height: Number(event.target.value),
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Altura exacta (px)
+
+                    <input
+                      type="number"
+                      min={80}
+                      max={500}
+                      value={element.height}
+                      onChange={(event) =>
+                        updateElement(element.id, {
+                          height: Math.max(
+                            80,
+                            Math.min(
+                              500,
+                              Number(event.target.value) || 80
+                            )
+                          ),
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              )}
+
               </div>
               </>
               )}

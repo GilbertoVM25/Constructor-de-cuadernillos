@@ -24,6 +24,7 @@ export type QuestionElement = {
   type: 'question';
   text: string;
   answerLines: number;
+  richHtml?: string;
 };
 
 
@@ -45,6 +46,7 @@ export type TextElement = {
   id: string;
   type: 'text';
   content: string;
+  richHtml?: string;
 };
 
 export type TableElement = {
@@ -77,13 +79,34 @@ export type GalleryElement = {
 };
 
 
+export type ResponseAreaElement = {
+  id: string;
+  type: 'responseArea';
+  style: 'lines' | 'blank' | 'grid' | 'drawing';
+  height: number;
+  label: string;
+};
+
+export type TextImageElement = {
+  id: string;
+  type: 'textImage';
+  text: string;
+  richHtml?: string;
+  side: 'left' | 'right';
+  textPercent: 50 | 60 | 70;
+  images: GalleryImage[];
+  gap: number;
+  imageHeight: number;
+};
 
 export type ContentElement =
   | QuestionElement
   | TextElement
   | TableElement
   | ImageElement
-  | GalleryElement;
+  | GalleryElement
+  | ResponseAreaElement
+  | TextImageElement;
 
 
 
@@ -131,6 +154,7 @@ export type WorkbookProject = {
   id: string;
   name: string;
   sequences: WorkbookSequence[];
+  cover?: CoverSettings;
 };
 
 
@@ -146,3 +170,19 @@ export type TableTemplate =
   | 'basic'
   | 'comparison'
   | 'experiment';
+
+
+export type CoverSettings = {
+  title: string;
+  subtitle: string;
+  subject: string;
+  grade: string;
+  school: string;
+  schoolYear: string;
+  author: string;
+  presentation: string;
+  template?: 'academic' | 'modern' | 'minimal';
+  accentColor?: string;
+  coverImage?: string;
+  schoolLogo?: string;
+};

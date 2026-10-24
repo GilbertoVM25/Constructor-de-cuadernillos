@@ -298,6 +298,7 @@ export function paginate(
  * - Preferencia manual de ancho
  */
 
+
 export function paginateAdaptive(
   blocks: Block[],
   measurements: BlockMeasurements,
@@ -306,22 +307,49 @@ export function paginateAdaptive(
 ): Page[] {
   const pages: Page[] = [{ rows: [] }];
 
-  let index = 0;
-  let used = 0;
+  // Propósito y PDA son una pareja obligatoria.
+  const purpose = blocks.find(
+    (block) => block.kind === 'purpose'
+  );
+
+  const pda = blocks.find(
+    (block) => block.kind === 'pda'
+  );
+
+  const hasHeader = Boolean(purpose && pda);
+
+  const flowBlocks = hasHeader
+    ? blocks.filter(
+        (block) => block !== purpose && block !== pda
+      )
+    : blocks;
 
   const height = (
     block: Block,
     width: 'half' | 'full' = 'half'
-  ): number => {
-    return getHeight(block, measurements, width);
-  };
+  ) => getHeight(block, measurements, width);
 
-  const layout = (block: Block) =>
-    block.layout ?? 'auto';
+  const hasWideTable = (block: Block): boolean =>
+    (block.table?.headers.length ?? 0) >= 4 ||
+    (block.elements ?? []).some(
+      (element) =>
+        element.type === 'table' &&
+        element.table.headers.length >= 4
+    );
+
+  const hasComplexContent = (block: Block): boolean =>
+    Boolean(block.table) ||
+    Boolean(block.checklist) ||
+    Boolean(block.multipleChoice) ||
+    (block.elements ?? []).some(
+      (element) => element.type === 'table'
+    );
 
   const wantsFull = (block: Block): boolean => {
-    if (layout(block) === 'full') return true;
-    if (layout(block) === 'half') return false;
+    if (block.layout === 'full') return true;
+    if (block.layout === 'half') return false;
+
+    if (hasWideTable(block)) return true;
 
     const half = height(block, 'half');
     const full = height(block, 'full');
@@ -332,182 +360,283 @@ export function paginateAdaptive(
     );
   };
 
-  const getRemaining = (): number =>
-    capacity - used;
+  const makeRow = (
+    row: Omit<PageRow, 'height'>,
+    rowHeight: number
+  ): PageRow => ({
+    ...row,
+    height: rowHeight,
+  });
 
   const newPage = () => {
     pages.push({ rows: [] });
-    used = 0;
   };
 
-  const add = (row: PageRow, rowHeight: number) => {
-    const page = pages[pages.length - 1];
-    const spacing = page.rows.length ? gap : 0;
+  const currentPage = () =>
+    pages[pages.length - 1];
 
-    page.rows.push({
-      ...row,
-      height: rowHeight,
-    });
+  const pageUsed = (page: Page): number =>
+    page.rows.reduce(
+      (sum, row, index) =>
+        sum + row.height + (index > 0 ? gap : 0),
+      0
+    );
 
-    used += spacing + rowHeight;
+  const addRow = (row: PageRow) => {
+    const page = currentPage();
+    page.rows.push(row);
 
-    if (rowHeight > capacity + 0.5) {
+    if (row.height > capacity + 0.5) {
       page.oversize = true;
     }
   };
 
-  while (index < blocks.length) {
-    const first = blocks[index];
-    const second = blocks[index + 1];
-    const third = blocks[index + 2];
+  // Primera fila fija.
+  if (purpose && pda) {
+    addRow(
+      makeRow(
+        {
+          left: purpose,
+          right: pda,
+        },
+        Math.max(
+          height(purpose, 'half'),
+          height(pda, 'half')
+        )
+      )
+    );
+  }
 
-    const page = pages[pages.length - 1];
-    const spacing = page.rows.length ? gap : 0;
-    const available = getRemaining() - spacing;
+  type Candidate = {
+    row: PageRow;
+    consumed: number;
+    penalty: number;
+  };
 
-    const h1 = height(first);
+  // Composiciones posibles desde un punto dado.
+  const candidatesAt = (
+    index: number
+  ): Candidate[] => {
+    const first = flowBlocks[index];
+    const second = flowBlocks[index + 1];
+    const third = flowBlocks[index + 2];
 
-    // 1. Bloque de ancho completo
+    if (!first) return [];
+
+    const candidates: Candidate[] = [];
+
     if (wantsFull(first)) {
-      const fullHeight = height(first, 'full');
+      candidates.push({
+        row: makeRow(
+          { full: first },
+          height(first, 'full')
+        ),
+        consumed: 1,
+        penalty: 0,
+      });
 
-      if (
-        fullHeight > available &&
-        page.rows.length > 0
-      ) {
-        newPage();
-        continue;
-      }
-
-      add(
-        { full: first, height: fullHeight },
-        fullHeight
-      );
-
-      index++;
-      continue;
+      return candidates;
     }
 
-    // 2. Evaluar pila lateral de tres bloques
+    // Opción A: un bloque a media anchura.
+    candidates.push({
+      row: makeRow(
+        { left: first },
+        height(first, 'half')
+      ),
+      consumed: 1,
+      penalty: 12,
+    });
+
     if (
       second &&
-      third &&
-      !wantsFull(second) &&
-      !wantsFull(third)
+      !wantsFull(second)
     ) {
-      const h2 = height(second);
-      const h3 = height(third);
+      const h1 = height(first, 'half');
+      const h2 = height(second, 'half');
 
-      const stackHeight = h1 + h2 + gap;
-      const composedHeight = Math.max(
-        stackHeight,
-        h3
-      );
-
-      const normalHeight =
-        Math.max(h1, h2) + gap + h3;
-
-      // El tercer bloque debe ser más alto que
-      // los anteriores y tener tamaño compatible.
-      const suitable =
-        h3 >= Math.max(h1, h2) * 1.15 &&
-        stackHeight / h3 >= 0.65 &&
-        stackHeight / h3 <= 1.45;
-
-      const useful =
-        composedHeight <= normalHeight * 0.88;
-
-      // Solo agrupar si cabe en una página.
-      if (
-        suitable &&
-        useful &&
-        composedHeight <= capacity + 0.5
-      ) {
-        if (composedHeight <= available + 0.5) {
-          add(
-            {
-              leftStack: [first, second],
-              right: third,
-              height: composedHeight,
-            },
-            composedHeight
-          );
-
-          index += 3;
-          continue;
-        }
-
-        // Si no cabe la pila, permitir que la
-        // siguiente página la reciba completa.
-        if (page.rows.length > 0) {
-          newPage();
-          continue;
-        }
-      }
-    }
-
-    // 3. Evaluar pareja horizontal
-    if (second && !wantsFull(second)) {
-      const h2 = height(second);
-      const pairHeight = Math.max(h1, h2);
-
-      if (pairHeight <= available + 0.5) {
-        add(
+      // Opción B: dos bloques en una fila.
+      candidates.push({
+        row: makeRow(
           {
             left: first,
             right: second,
-            height: pairHeight,
           },
-          pairHeight
-        );
+          Math.max(h1, h2)
+        ),
+        consumed: 2,
+        penalty:
+          Math.abs(h1 - h2) /
+          Math.max(h1, h2, 1) * 8,
+      });
 
-        index += 2;
-        continue;
-      }
-
-      // Si la pareja no cabe pero el primer
-      // bloque sí, aprovechar el espacio
-      // sin alterar el orden pedagógico.
+      // Opción C: dos apilados a la izquierda.
       if (
-        h1 <= available + 0.5 &&
-        available >= 100
+        third &&
+        !wantsFull(third) &&
+        ![first, second, third].some(
+          (block) =>
+            block.kind === 'purpose' ||
+            block.kind === 'pda' ||
+            hasComplexContent(block)
+        )
       ) {
-        add(
-          { left: first, height: h1 },
-          h1
-        );
+        const h3 = height(third, 'half');
+        const stack = h1 + gap + h2;
+        const composed = Math.max(stack, h3);
 
-        index++;
-        continue;
+        const suitable =
+          h3 >= Math.max(h1, h2) * 1.15 &&
+          stack / Math.max(h3, 1) >= 0.65 &&
+          stack / Math.max(h3, 1) <= 1.45;
+
+        const normal =
+          Math.max(h1, h2) + gap + h3;
+
+        if (
+          suitable &&
+          composed <= normal * 0.88
+        ) {
+          candidates.push({
+            row: makeRow(
+              {
+                leftStack: [first, second],
+                right: third,
+              },
+              composed
+            ),
+            consumed: 3,
+            penalty: 5,
+          });
+        }
       }
     }
 
-    // 4. Bloque individual
-    if (h1 <= available + 0.5) {
-      add(
-        { left: first, height: h1 },
-        h1
-      );
+    return candidates;
+  };
 
-      index++;
+  type Plan = {
+    rows: PageRow[];
+    nextIndex: number;
+    used: number;
+    penalty: number;
+  };
+
+  const MAX_LOOKAHEAD_ROWS = 8;
+
+  // Busca la composición más conveniente
+  // sin modificar el orden de los bloques.
+  const findBestPlan = (
+    startIndex: number,
+    initialUsed: number,
+    initialRows: number
+  ): Plan => {
+    const evaluate = (
+      index: number,
+      used: number,
+      rowsOnPage: number,
+      depth: number
+    ): Plan => {
+      let best: Plan = {
+        rows: [],
+        nextIndex: index,
+        used,
+        penalty: 0,
+      };
+
+      if (
+        depth >= MAX_LOOKAHEAD_ROWS ||
+        index >= flowBlocks.length
+      ) {
+        return best;
+      }
+
+      for (const candidate of candidatesAt(index)) {
+        const spacing = rowsOnPage > 0 ? gap : 0;
+        const nextUsed =
+          used + spacing + candidate.row.height;
+
+        if (nextUsed > capacity + 0.5) {
+          continue;
+        }
+
+        const next = evaluate(
+          index + candidate.consumed,
+          nextUsed,
+          rowsOnPage + 1,
+          depth + 1
+        );
+
+        const plan: Plan = {
+          rows: [candidate.row, ...next.rows],
+          nextIndex: next.nextIndex,
+          used: next.used,
+          penalty: candidate.penalty + next.penalty,
+        };
+
+        // Prioridad:
+        // 1. Más bloques en la página.
+        // 2. Mejor aprovechamiento del espacio.
+        // 3. Menos composiciones forzadas.
+        const score = (value: Plan) =>
+          (value.nextIndex - startIndex) * 10000 +
+          (value.used / Math.max(capacity, 1)) * 100 -
+          value.penalty;
+
+        if (score(plan) > score(best)) {
+          best = plan;
+        }
+      }
+
+      return best;
+    };
+
+    return evaluate(
+      startIndex,
+      initialUsed,
+      initialRows,
+      0
+    );
+  };
+
+  let index = 0;
+
+  while (index < flowBlocks.length) {
+    const page = currentPage();
+    const used = pageUsed(page);
+
+    const plan = findBestPlan(
+      index,
+      used,
+      page.rows.length
+    );
+
+    if (plan.rows.length > 0) {
+      plan.rows.forEach(addRow);
+      index = plan.nextIndex;
       continue;
     }
 
-    // 5. Trasladar a la siguiente página
+    // No cabe otra composición en esta página.
     if (page.rows.length > 0) {
       newPage();
       continue;
     }
 
-    // El bloque es demasiado grande para una
-    // página. Se muestra advertencia.
-    add(
-      { left: first, height: h1 },
-      h1
-    );
+    // Bloque indivisible más alto que una página.
+    // Lo colocamos y marcamos el desbordamiento.
+    const fallback = candidatesAt(index)[0];
 
-    index++;
+    addRow(fallback.row);
+    index += fallback.consumed;
+
+    currentPage().oversize = true;
+
+    if (index < flowBlocks.length) {
+      newPage();
+    }
   }
 
   return pages;
 }
+

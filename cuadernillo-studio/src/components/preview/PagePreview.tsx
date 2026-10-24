@@ -7,6 +7,12 @@ import {
   useState,
 } from 'react';
 
+import { TextImageView } from '../editor/TextImageView';
+
+import { blockIcons } from '../../styles/blockIcons';
+
+import DOMPurify from 'dompurify';
+
 import type {
   Block,
   Workbook,
@@ -22,6 +28,29 @@ import {
   createAtomicBlocks,
   splitOversizedBlocks,
 } from '../../engine/splitBlocks';
+
+
+function cleanRichHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [
+      'p',
+      'br',
+      'strong',
+      'b',
+      'em',
+      'i',
+      'u',
+      's',
+      'sub',
+      'sup',
+      'ul',
+      'ol',
+      'li',
+    ],
+    ALLOWED_ATTR: [],
+  });
+}
+
 
 const colors: Record<string, string> = {
   purpose: '#f8d9a3',
@@ -42,17 +71,65 @@ type PreviewProps = {
   pageStart?: number;
   className?: string;
   onPageCountChange?: (count: number) => void;
+
+  selectedElementId?: string | null;
+
+  onSelectElement?: (
+    blockId: string,
+    elementId: string
+  ) => void;
 };
 
 
 
 
+
+type ElementSelectionProps = {
+  selectedElementId?: string | null;
+  onSelectElement?: (
+    blockId: string,
+    elementId: string
+  ) => void;
+};
+
 function ContentElementsView({
   block,
+  selectedElementId,
+  onSelectElement,
 }: {
   block: Block;
-}) {
+} & ElementSelectionProps) {
+
   const elements = block.elements ?? [];
+
+  
+  const selectElement = (
+    event: React.MouseEvent,
+    elementId: string
+  ) => {
+    if (!onSelectElement) return;
+
+    event.stopPropagation();
+
+    onSelectElement(
+      block.sourceId ?? block.id,
+      elementId
+    );
+  };
+
+  const elementClass = (
+    id: string,
+    baseClass: string
+  ) => {
+    if (!onSelectElement) return baseClass;
+
+    return `${baseClass} preview-selectable-element ${
+      selectedElementId === id
+        ? 'preview-element-selected'
+        : ''
+    }`;
+  };
+
 
   if (elements.length === 0) return null;
 
@@ -62,10 +139,27 @@ function ContentElementsView({
         if (element.type === 'text') {
           return (
             <div
-              className="workbook-text-element"
+              className={elementClass(
+                element.id,
+                'workbook-text-element'
+              )}
+              onClick={(event) =>
+                selectElement(event, element.id)
+              }
               key={element.id}
             >
-              {element.content}
+              
+              {element.richHtml != null ? (
+                <div
+                  className="rich-text-rendered"
+                  dangerouslySetInnerHTML={{
+                    __html: cleanRichHtml(element.richHtml),
+                  }}
+                />
+              ) : (
+                element.content
+              )}
+
             </div>
           );
         }
@@ -73,7 +167,13 @@ function ContentElementsView({
         if (element.type === 'question') {
           return (
             <div
-              className="educational-question"
+              className={elementClass(
+                element.id,
+                'educational-question'
+              )}
+              onClick={(event) =>
+                selectElement(event, element.id)
+              }
               key={element.id}
             >
               <div className="educational-question-text">
@@ -81,7 +181,18 @@ function ContentElementsView({
                   •
                 </span>
 
-                <span>{element.text}</span>
+                
+                {element.richHtml != null ? (
+                  <div
+                    className="rich-text-rendered"
+                    dangerouslySetInnerHTML={{
+                      __html: cleanRichHtml(element.richHtml),
+                    }}
+                  />
+                ) : (
+                  <span>{element.text}</span>
+                )}
+
               </div>
 
               {element.answerLines > 0 && (
@@ -108,7 +219,13 @@ function ContentElementsView({
 
           return (
             <div
-              className="workbook-table-container"
+              className={elementClass(
+                element.id,
+                'workbook-table-container'
+              )}
+              onClick={(event) =>
+                selectElement(event, element.id)
+              }
               key={element.id}
             >
               <table className="workbook-data-table">
@@ -143,7 +260,13 @@ function ContentElementsView({
         if (element.type === 'image') {
           return (
             <figure
-              className="workbook-image-element"
+              className={elementClass(
+                element.id,
+                'workbook-image-element'
+              )}
+              onClick={(event) =>
+                selectElement(event, element.id)
+              }
               key={element.id}
               style={{
                 width: `${element.width}%`,
@@ -175,11 +298,28 @@ function ContentElementsView({
             </figure>
           );
         }
+
+        if (element.type === 'textImage') {
+          return (
+            <TextImageView
+              key={element.id}
+              value={element}
+              className={elementClass(element.id, '')}
+              onClick={event => selectElement(event, element.id)}
+            />
+          );
+        }
         
         if (element.type === 'gallery') {
           return (
             <div
-              className="workbook-gallery"
+              className={elementClass(
+                element.id,
+                'workbook-gallery'
+              )}
+              onClick={(event) =>
+                selectElement(event, element.id)
+              }
               key={element.id}
               style={{
                 gridTemplateColumns:
@@ -211,8 +351,53 @@ function ContentElementsView({
             </div>
           );
         }
-
         
+        if (element.type === 'responseArea') {
+          const areaHeight = Math.max(
+            80,
+            Math.min(500, element.height)
+          );
+
+          return (
+            <div
+              key={element.id}
+              className={elementClass(
+                element.id,
+                'workbook-response-element'
+              )}
+              onClick={(event) =>
+                selectElement(event, element.id)
+              }
+            >
+              {element.label && (
+                <div className="workbook-response-label">
+                  {element.label}
+                </div>
+              )}
+
+              <div
+                className={`workbook-response-area response-style-${element.style}`}
+                style={{ height: areaHeight }}
+              >
+                {element.style === 'lines' && (
+                  <div className="workbook-response-lines">
+                    {Array.from({
+                      length: Math.floor(
+                        (areaHeight - 12) / 28
+                      ),
+                    }).map((_, index) => (
+                      <div
+                        key={index}
+                        className="workbook-response-line"
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
         return null;
       })}
     </div>
@@ -262,9 +447,11 @@ function MultipleChoiceView({
 
   return (
     <div className="workbook-multiple-choice">
-      <div className="pisa-situation">
-        {exercise.situation}
-      </div>
+      {exercise.situation?.trim() && (
+        <div className="pisa-situation">
+          {exercise.situation}
+        </div>
+      )}
 
       <p className="pisa-question">
         {exercise.question}
@@ -346,11 +533,13 @@ function BlockCard({
   block,
   selected,
   onSelect,
+  selectedElementId,
+  onSelectElement,
 }: {
   block: Block;
   selected: boolean;
   onSelect: (id: string) => void;
-}) {
+} & ElementSelectionProps) {
   const isInformation = ['purpose', 'pda'].includes(
     block.kind
   );
@@ -360,6 +549,8 @@ function BlockCard({
   );
 
   const theme = blockThemes[block.kind];
+
+  const headingIcon = blockIcons[block.kind];
 
   return (
     <div
@@ -378,11 +569,19 @@ function BlockCard({
           color: theme.headerText,
         }}
       >
-        {block.image && !hasPhoto && (
-          <img src={block.image} alt="" />
-        )}
+        
+      
+      {headingIcon && (
+        <img
+          className="block-type-icon"
+          src={headingIcon}
+          alt=""
+          aria-hidden="true"
+        />
+      )}
 
-        <strong>{block.title}</strong>
+      <strong>{block.title}</strong>
+
       </div>
 
       <div className="block-body">
@@ -398,7 +597,11 @@ function BlockCard({
         />
       )}
 
-      <ContentElementsView block={block} />
+      <ContentElementsView
+        block={block}
+        selectedElementId={selectedElementId}
+        onSelectElement={onSelectElement}
+      />
 
       <ChecklistView block={block} />
       <MultipleChoiceView block={block} />
@@ -422,11 +625,13 @@ function BlockStack({
   blocks,
   selected,
   onSelect,
+  selectedElementId,
+  onSelectElement,
 }: {
   blocks: Block[];
   selected: string | null;
   onSelect: (id: string) => void;
-}) {
+} & ElementSelectionProps) {
   return (
     <div className="paper-stack">
       {blocks.map((block) => (
@@ -435,6 +640,8 @@ function BlockStack({
           block={block}
           selected={selected === (block.sourceId ?? block.id)}
           onSelect={onSelect}
+          selectedElementId={selectedElementId}
+          onSelectElement={onSelectElement}
         />
       ))}
     </div>
@@ -445,11 +652,13 @@ function PageRowView({
   row,
   selected,
   onSelect,
+  selectedElementId,
+  onSelectElement,
 }: {
   row: PageRow;
   selected: string | null;
   onSelect: (id: string) => void;
-}) {
+} & ElementSelectionProps) {
   if (row.full) {
     return (
       <div className="paper-row paper-row-full">
@@ -457,6 +666,8 @@ function PageRowView({
           block={row.full}
           selected={selected === (row.full.sourceId ?? row.full.id)}
           onSelect={onSelect}
+          selectedElementId={selectedElementId}
+          onSelectElement={onSelectElement}
         />
       </div>
     );
@@ -470,6 +681,8 @@ function PageRowView({
             block={row.left}
             selected={selected === (row.left.sourceId ?? row.left.id)}
             onSelect={onSelect}
+            selectedElementId={selectedElementId}
+            onSelectElement={onSelectElement}
           />
         )}
 
@@ -478,6 +691,8 @@ function PageRowView({
             blocks={row.leftStack}
             selected={selected}
             onSelect={onSelect}
+            selectedElementId={selectedElementId}
+            onSelectElement={onSelectElement}
           />
         )}
       </div>
@@ -488,6 +703,8 @@ function PageRowView({
             block={row.right}
             selected={selected === (row.right.sourceId ?? row.right.id)}
             onSelect={onSelect}
+            selectedElementId={selectedElementId}
+            onSelectElement={onSelectElement}
           />
         )}
       </div>
@@ -554,6 +771,8 @@ export function PagePreview({
   pageStart = 5,
   className = '',
   onPageCountChange,
+  selectedElementId = null,
+  onSelectElement,
 }: PreviewProps) {
   const [measurements, setMeasurements] = useState<{
     blocks: BlockMeasurements;
@@ -562,6 +781,8 @@ export function PagePreview({
     blocks: {},
     capacity: 905,
   });
+
+  const [showPaginationDebug, setShowPaginationDebug] = useState(false);
 
   const measurementRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLDivElement>(null);
@@ -685,9 +906,133 @@ export function PagePreview({
     onPageCountChange?.(pages.length);
   }, [pages.length, onPageCountChange]);
 
+  // Distribuye una parte del espacio libre entre las líneas de respuesta.
+  // Una fila horizontal crece según la columna con MÁS líneas, no la suma
+  // de ambas: así el cálculo es conservador y evita desbordamientos.
+  const pageAnswerExtras = useMemo(() => {
+    const countLines = (block: Block): number => {
+      const questions = (block.elements ?? []).reduce(
+        (total, element) =>
+          total + (element.type === 'question'
+            ? Math.min(20, Math.max(0, element.answerLines))
+            : 0),
+        0
+      );
+      const pisa = Math.max(
+        0,
+        block.multipleChoice?.justificationLines ?? 0
+      );
+      return questions + pisa;
+    };
+
+    const linesInRow = (row: PageRow): number => {
+      if (row.full) return countLines(row.full);
+      const left = row.left
+        ? countLines(row.left)
+        : (row.leftStack ?? []).reduce(
+            (total, block) => total + countLines(block),
+            0
+          );
+      const right = row.right ? countLines(row.right) : 0;
+      // En una misma fila se aprovecha el incremento más alto.
+      return Math.max(left, right);
+    };
+
+    return pages.map((page) => {
+      if (page.oversize) return 0;
+
+      const used = page.rows.reduce(
+        (sum, row, index) =>
+          sum + row.height + (index > 0 ? 10 : 0),
+        0
+      );
+      const free = Math.max(0, measurements.capacity - used);
+      const effectiveLines = page.rows.reduce(
+        (total, row) => total + linesInRow(row),
+        0
+      );
+
+      // La última parte de la página debe quedar libre como margen seguro.
+      const reserve = 45;
+      const usable = Math.max(0, free - reserve);
+      if (!effectiveLines || usable < 16) return 0;
+
+      // Hasta 14 px más por línea (42 px en total en la CSS actual).
+      // Dejamos otro 20 % del margen utilizable sin asignar.
+      return Math.max(
+        0,
+        Math.min(14, Math.floor((usable * 0.8) / effectiveLines))
+      );
+    });
+  }, [pages, measurements.capacity]);
+
 
   return (
     <div className={`pages ${className}`}>
+      {onSelectElement && (
+        <div className="pagination-debug-controls">
+          <button
+            type="button"
+            onClick={() => setShowPaginationDebug((current) => !current)}
+          >
+            {showPaginationDebug ? 'Ocultar diagnóstico' : 'Diagnosticar paginación'}
+          </button>
+
+          {showPaginationDebug && (
+            <div className="pagination-debug-report">
+              <strong>Diagnóstico de esta secuencia</strong>
+              <p>
+                Área disponible: {Math.round(measurements.capacity)} px ·
+                Páginas: {pages.length} ·
+                Bloques: {workbook.blocks.length}
+              </p>
+              {pages.map((page, pageIndex) => {
+                const used = page.rows.reduce(
+                  (sum, row, rowIndex) =>
+                    sum + row.height + (rowIndex > 0 ? 10 : 0),
+                  0
+                );
+                const remaining = measurements.capacity - used;
+                return (
+                  <div key={pageIndex} className="pagination-debug-page">
+                    <strong>
+                      Página {pageStart + pageIndex}: usados {Math.round(used)} px,
+                      libres {Math.round(remaining)} px
+                      {page.oversize ? ' · DESBORDAMIENTO' : ''}
+                      {' · ampliación por línea: +' + (pageAnswerExtras[pageIndex] ?? 0) + ' px'}
+                    </strong>
+                    {page.rows.map((row, rowIndex) => {
+                      const rowBlocks = row.full
+                        ? [row.full]
+                        : [...(row.leftStack ?? (row.left ? [row.left] : [])),
+                           ...(row.right ? [row.right] : [])];
+                      return (
+                        <div key={rowIndex}>
+                          Fila {rowIndex + 1} ({Math.round(row.height)} px):{' '}
+                          {rowBlocks.map((block) => block.title).join(' | ')}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              <details>
+                <summary>Alturas medidas de todos los bloques</summary>
+                {workbook.blocks.map((block) => {
+                  const size = measurements.blocks[block.id];
+                  return (
+                    <div key={block.id}>
+                      {block.title}: media {Math.round(size?.half ?? 0)} px,
+                      completa {Math.round(size?.full ?? 0)} px,
+                      preferencia {block.layout ?? 'auto'}
+                    </div>
+                  );
+                })}
+              </details>
+            </div>
+          )}
+        </div>
+      )}
       {/* Bloques invisibles para medir alturas. */}
       <div
         className="pagination-measurer"
@@ -749,7 +1094,13 @@ export function PagePreview({
 
       {/* Páginas visibles. */}
       {pages.map((page, index) => (
-        <div className="paper" key={index}>
+        <div
+          className="paper"
+          key={index}
+          style={{
+            '--answer-line-extra': `${pageAnswerExtras[index] ?? 0}px`,
+          } as React.CSSProperties}
+        >
           <Header workbook={workbook} />
 
           <div className="paper-rows">
@@ -759,6 +1110,8 @@ export function PagePreview({
                 row={row}
                 selected={selected}
                 onSelect={onSelect}
+                selectedElementId={selectedElementId}
+                onSelectElement={onSelectElement}
               />
             ))}
           </div>

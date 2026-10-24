@@ -11,11 +11,13 @@ type DragHandleProps = {
 
 type Props = {
   id: string;
+  selected?: boolean;
   children: (drag: DragHandleProps) => ReactNode;
 };
 
 export function SortableContentItem({
   id,
+  selected = false,
   children,
 }: Props) {
   const {
@@ -32,7 +34,10 @@ export function SortableContentItem({
       ref={setNodeRef}
       className={`content-editor-item sortable-item ${
         isDragging ? 'is-dragging' : ''
+      } ${
+        selected ? 'is-selected-from-preview' : ''
       }`}
+      data-content-element-id={id}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
