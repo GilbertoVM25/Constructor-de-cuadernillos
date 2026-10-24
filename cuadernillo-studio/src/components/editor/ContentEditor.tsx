@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import { RichTextEditor } from './RichTextEditor';
 
 import { TextImageEditor } from './TextImageEditor';
+import { CardGridEditor } from './CardGridEditor';
 import type { TextImageElement } from '../../models/document';
 
 import {
@@ -224,6 +225,18 @@ export function ContentEditor({
   };
 
   
+  const addCardGrid = () => {
+    const id = crypto.randomUUID();
+    save([...elements, {
+      id, type: 'cardGrid', columns: 3, gap: 8, imageHeight: 95,
+      cards: Array.from({ length: 3 }, (_, index) => ({
+        id: crypto.randomUUID(), title: `Concepto ${index + 1}`,
+        text: 'Descripción del concepto.', image: '', imagePosition: 'bottom' as const,
+      })),
+    }]);
+    setExpandedId(id);
+  };
+
   const addResponseArea = () => {
     const id = crypto.randomUUID();
 
@@ -328,6 +341,48 @@ export function ContentEditor({
 
     save(
       elements.filter((element) => element.id !== id)
+    );
+  };
+
+  const changeCellImage = (
+    table: WorkbookTable,
+    row: number,
+    column: number,
+    patch: { src?: string; width?: number; align?: 'left' | 'center' | 'right' }
+  ): WorkbookTable => {
+    const key = `${row}:${column}`;
+    const current = table.cellImages?.[key] ?? { src: '', width: 85, align: 'center' as const };
+    const nextImage = { ...current, ...patch };
+    const cellImages = { ...table.cellImages };
+    if (!nextImage.src) delete cellImages[key];
+    else cellImages[key] = nextImage;
+    return { ...table, cellImages };
+  };
+
+  const uploadCellImage = (elementId: string, table: WorkbookTable, row: number, column: number, file: File) => {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      alert('Utiliza JPG, PNG o WebP.'); return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert('La imagen debe pesar menos de 2 MB.'); return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        updateTable(elementId, changeCellImage(table, row, column, { src: reader.result }));
+      }
+    };
+    reader.onerror = () => alert('No fue posible leer la imagen.');
+    reader.readAsDataURL(file);
+  };
+
+  // Al eliminar una fila o columna, mantener asociadas las imágenes restantes.
+  const trimCellImages = (table: WorkbookTable, rows: number, cols: number): WorkbookTable['cellImages'] => {
+    return Object.fromEntries(
+      Object.entries(table.cellImages ?? {}).filter(([key]) => {
+        const match = /^(\d+):(\d+)$/.exec(key);
+        return !!match && Number(match[1]) < rows && Number(match[2]) < cols;
+      })
     );
   };
 
@@ -468,6 +523,7 @@ export function ContentEditor({
           + Imagen
         </button>
         <button type="button" onClick={addTextImage}>+ Texto + Imagen</button>
+        <button type="button" onClick={addCardGrid}>+ Tarjetas informativas</button>
         <button type="button" onClick={addGallery}>
           + Galería
         </button>
@@ -528,6 +584,8 @@ export function ContentEditor({
                             ? 'Tabla'
                             : element.type === 'image'
                               ? 'Imagen'
+                              : element.type === 'cardGrid'
+                                ? 'Tarjetas informativas'
                               : element.type === 'responseArea'
                                 ? 'Espacio de respuesta'
                                 : 'Galería'}
@@ -541,6 +599,8 @@ export function ContentEditor({
                         ? element.text.slice(0, 60) || 'Sin pregunta'
                         : element.type === 'table'
                           ? `${element.table.headers.length} columnas · ${element.table.rows.length} filas`
+                          : element.type === 'cardGrid'
+                            ? `${element.cards.length} tarjetas · ${element.columns} columnas`
                           : element.type === 'responseArea'
                             ? `${element.style} · ${element.height} px`
                             : element.type === 'image'
@@ -636,6 +696,26 @@ export function ContentEditor({
                       }
                     />
                   </label>
+                  <label>
+                    Ubicación de la respuesta
+                    <select value={element.answerPosition ?? 'below'}
+                      onChange={(event) => updateElement(element.id, {
+                        answerPosition: event.target.value as 'below' | 'inline',
+                      })}>
+                      <option value="below">Debajo</option>
+                      <option value="inline">Al lado (respuesta corta)</option>
+                    </select>
+                  </label>
+                  <label>
+                    Anchura dentro de la actividad
+                    <select value={element.width ?? 'full'}
+                      onChange={(event) => updateElement(element.id, {
+                        width: event.target.value as 'full' | 'half',
+                      })}>
+                      <option value="full">Fila completa</option>
+                      <option value="half">Media fila (emparejar con la siguiente)</option>
+                    </select>
+                  </label>
                 </>
               )}
 
@@ -688,6 +768,7 @@ export function ContentEditor({
                           rows: element.table.rows.map((row) =>
                             row.slice(0, -1)
                           ),
+                           cellImages: trimCellImages(element.table, element.table.rows.length, element.table.headers.length - 1),
                         })
                       }
                     >
@@ -718,6 +799,7 @@ export function ContentEditor({
                         updateTable(element.id, {
                           ...element.table,
                           rows: element.table.rows.slice(0, -1),
+                           cellImages: trimCellImages(element.table, element.table.rows.length - 1, element.table.headers.length),
                         })
                       }
                     >
@@ -753,7 +835,7 @@ export function ContentEditor({
                       <strong>Fila {rowIndex + 1}</strong>
 
                       {row.map((cell, columnIndex) => (
-                        <label key={columnIndex}>
+                        <div className="table-cell-input" key={columnIndex}>
                           {element.table.headers[columnIndex] ||
                             `Columna ${columnIndex + 1}`}
 
@@ -777,7 +859,68 @@ export function ContentEditor({
                               })
                             }
                           />
-                        </label>
+                          <div className="table-cell-image-controls">
+                            <label>
+                              Imagen de la celda (opcional)
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                onChange={(event) => {
+                                  const file = event.currentTarget.files?.[0];
+                                  if (file) uploadCellImage(element.id, element.table, rowIndex, columnIndex, file);
+                                  event.currentTarget.value = '';
+                                }}
+                              />
+                            </label>
+                            <label>
+                              Ruta de la imagen
+                              <input
+                                type="text"
+                                value={element.table.cellImages?.[`${rowIndex}:${columnIndex}`]?.src ?? ''}
+                                placeholder="/assets/material.png"
+                                onChange={(event) => updateTable(
+                                  element.id,
+                                  changeCellImage(element.table, rowIndex, columnIndex, { src: event.target.value })
+                                )}
+                              />
+                            </label>
+                            {element.table.cellImages?.[`${rowIndex}:${columnIndex}`]?.src && (
+                              <>
+                                <img
+                                  className="table-cell-image-editor-preview"
+                                  src={element.table.cellImages[`${rowIndex}:${columnIndex}`].src}
+                                  alt="Vista previa de la celda"
+                                />
+                                <label>
+                                  Ancho: {element.table.cellImages[`${rowIndex}:${columnIndex}`].width ?? 85}%
+                                  <input
+                                    type="range" min={20} max={100} step={5}
+                                    value={element.table.cellImages[`${rowIndex}:${columnIndex}`].width ?? 85}
+                                    onChange={(event) => updateTable(element.id,
+                                      changeCellImage(element.table, rowIndex, columnIndex, { width: Number(event.target.value) }))}
+                                  />
+                                </label>
+                                <label>
+                                  Alineación
+                                  <select
+                                    value={element.table.cellImages[`${rowIndex}:${columnIndex}`].align ?? 'center'}
+                                    onChange={(event) => updateTable(element.id,
+                                      changeCellImage(element.table, rowIndex, columnIndex, {
+                                        align: event.target.value as 'left' | 'center' | 'right'
+                                      }))}
+                                  >
+                                    <option value="left">Izquierda</option>
+                                    <option value="center">Centro</option>
+                                    <option value="right">Derecha</option>
+                                  </select>
+                                </label>
+                                <button type="button" onClick={() => updateTable(
+                                  element.id, changeCellImage(element.table, rowIndex, columnIndex, { src: '' })
+                                )}>Quitar imagen de esta celda</button>
+                              </>
+                            )}
+                          </div>
+                         </div>
                       ))}
                     </div>
                   ))}
@@ -982,6 +1125,13 @@ export function ContentEditor({
                 </div>
               )}
               
+              {element.type === 'cardGrid' && (
+                <CardGridEditor
+                  value={element}
+                  onChange={(patch) => updateElement(element.id, patch)}
+                />
+              )}
+
               {element.type === 'responseArea' && (
                 <div className="response-area-editor">
                   <label>

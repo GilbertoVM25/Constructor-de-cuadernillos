@@ -178,9 +178,10 @@ button {
   background: #ff5c16;
   color: white;
   font-weight: 800;
-  font-size: 21px;
+  font-size: 20px;
   padding: 14px 10px;
-  border-radius: 7px
+  border-radius: 7px;
+  text-align: center;
 }
 
 .subject {
@@ -3806,4 +3807,260 @@ footer .footer-content {
 .text-image-text {
   font-size: 11px;
   line-height: 1.45;
+}
+
+.table-cell-image-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px dashed #aab5c6;
+  border-radius: 6px;
+}
+
+.table-cell-image-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.table-cell-image-editor-preview {
+  display: block;
+  max-width: 110px;
+  max-height: 110px;
+  object-fit: contain;
+}
+
+.workbook-table-cell-content {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.workbook-table-cell-image {
+  display: block;
+  max-width: 100%;
+  max-height: 135px;
+  object-fit: contain;
+}
+
+.workbook-table-cell-text {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media print {
+  .workbook-table-cell-image {
+    break-inside: avoid;
+  }
+}
+
+.sequence-import-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, .65);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.sequence-import-modal {
+  box-sizing: border-box;
+  width: min(680px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  border-radius: 12px;
+  background: #fff;
+  color: #1e293b;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .25);
+  padding: 22px;
+}
+
+.sequence-import-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px
+}
+
+.sequence-import-header h2 {
+  margin: 0
+}
+
+.sequence-import-modal textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 200px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.sequence-import-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  border: 0;
+  padding: 14px 0;
+}
+
+.sequence-import-options label {
+  display: flex;
+  align-items: center;
+  gap: 7px
+}
+
+.sequence-import-error {
+  color: #b91c1c;
+  white-space: pre-wrap
+}
+
+.sequence-import-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px
+}
+
+.workbook-elements .question-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+  break-inside: avoid;
+}
+
+.workbook-elements .question-pair>.educational-question {
+  min-width: 0;
+}
+
+/* Una pregunta half suelta se muestra de ancho completo, sin huecos artificiales. */
+.workbook-elements .question-inline {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.workbook-elements .question-inline .educational-question-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 65%;
+}
+
+.workbook-elements .question-inline .question-answer {
+  flex: 1 1 35%;
+  min-width: 35px;
+  padding: 0 2px 0 0;
+}
+
+.workbook-elements .question-inline .question-answer-line {
+  height: 24px !important;
+}
+
+.workbook-elements .question-inline .question-answer-line:not(:first-child) {
+  display: none;
+}
+
+@media print {
+  .workbook-elements .question-pair {
+    break-inside: avoid;
+  }
+}
+
+.workbook-card-grid {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
+  box-sizing: border-box;
+  margin: 6px 0 10px;
+}
+
+.workbook-info-card {
+  border: 1px solid #e9a15c;
+  border-radius: 6px;
+  padding: 8px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  break-inside: avoid;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.workbook-info-card-title {
+  display: block;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.workbook-info-card-text {
+  font-size: 10.5px;
+  line-height: 1.38;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  flex: 1;
+}
+
+.workbook-info-card-media {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.workbook-info-card-media img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.card-grid-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-grid-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-grid-editor-card {
+  border: 1px solid #ced5df;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px;
+  min-width: 0;
+}
+
+.card-grid-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+@media print {
+  .workbook-info-card {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

@@ -43,8 +43,8 @@ function array(value: unknown, at: string): unknown[] {
   if (!Array.isArray(value)) throw new Error(`${at}: se esperaba una lista.`);
   return value;
 }
-function choice<T extends string>(value: unknown, choices: readonly T[], at: string): T {
-  if (typeof value !== 'string' || !choices.includes(value as T)) {
+function choice<T extends string | number>(value: unknown, choices: readonly T[], at: string): T {
+  if (!choices.includes(value as T)) {
     throw new Error(`${at}: valor no reconocido (${String(value)}).`);
   }
   return value as T;
@@ -65,9 +65,29 @@ function table(value: unknown, at: string, ids: Set<string>): WorkbookTable {
   const rows = array(v.rows, `${at}.rows`).map((row, i) =>
     array(row, `${at}.rows[${i}]`).map((cell, j) => str(cell, `${at}.rows[${i}][${j}]`))
   );
+  const cellImages: NonNullable<WorkbookTable['cellImages']> = {};
+  if (v.cellImages !== undefined) {
+    const rawImages = object(v.cellImages, `${at}.cellImages`);
+    for (const [key, raw] of Object.entries(rawImages)) {
+      const match = /^(\d+):(\d+)$/.exec(key);
+      if (!match) throw new Error(`${at}.cellImages: posición inválida (${key}).`);
+      const row = Number(match[1]);
+      const col = Number(match[2]);
+      if (row >= rows.length || col >= headers.length) {
+        throw new Error(`${at}.cellImages: celda fuera de la tabla (${key}).`);
+      }
+      const item = object(raw, `${at}.cellImages[${key}]`);
+      cellImages[key] = {
+        src: str(item.src ?? '', `${at}.cellImages[${key}].src`),
+        width: Math.max(20, Math.min(100, nonnegative(item.width ?? 80, `${at}.cellImages[${key}].width`))),
+        align: choice(item.align ?? 'center', ['left', 'center', 'right'] as const, `${at}.cellImages[${key}].align`),
+      };
+    }
+  }
   return {
     id: id(v.id, ids), headers, rows,
     showHeaders: v.showHeaders === undefined ? true : v.showHeaders === true,
+    ...(Object.keys(cellImages).length ? { cellImages } : {}),
   };
 }
 function element(value: unknown, at: string, ids: Set<string>): ContentElement {
@@ -80,7 +100,9 @@ function element(value: unknown, at: string, ids: Set<string>): ContentElement {
     case 'question':
       return { id: elementId, type: 'question', text: str(v.text ?? '', `${at}.text`),
         answerLines: nonnegative(v.answerLines ?? 0, `${at}.answerLines`),
-        richHtml: optionalStr(v.richHtml, `${at}.richHtml`) };
+        richHtml: optionalStr(v.richHtml, `${at}.richHtml`),
+        answerPosition: v.answerPosition === 'inline' ? 'inline' : 'below',
+        width: v.width === 'half' ? 'half' : 'full' };
     case 'table':
       return { id: elementId, type: 'table', table: table(v.table, `${at}.table`, ids) };
     case 'image':
@@ -95,6 +117,49 @@ function element(value: unknown, at: string, ids: Set<string>): ContentElement {
           return { id: id(item.id, ids), src: str(item.src ?? '', `${at}.images[${i}].src`),
             caption: str(item.caption ?? '', `${at}.images[${i}].caption`) };
         }) };
+    case 'textImage':
+      return {
+        id: elementId,
+        type: 'textImage',
+        text: str(v.text ?? '', `${at}.text`),
+        richHtml: optionalStr(v.richHtml, `${at}.richHtml`),
+        side: choice(v.side ?? 'right', ['left', 'right'] as const, `${at}.side`),
+        textPercent: choice(v.textPercent ?? 60, [50, 60, 70] as const, `${at}.textPercent`),
+        gap: nonnegative(v.gap ?? 8, `${at}.gap`),
+        imageHeight: Math.max(20, Math.min(500, nonnegative(v.imageHeight ?? 95, `${at}.imageHeight`))),
+        images: array(v.images ?? [], `${at}.images`).map((raw, i) => {
+          const item = object(raw, `${at}.images[${i}]`);
+          return {
+            id: id(item.id, ids),
+            src: str(item.src ?? '', `${at}.images[${i}].src`),
+            caption: str(item.caption ?? '', `${at}.images[${i}].caption`),
+          };
+        }),
+      };
+    case 'cardGrid': {
+      const rawCards = array(v.cards ?? [], `${at}.cards`);
+      const columnsValue = v.columns ?? 3;
+      if (columnsValue !== 2 && columnsValue !== 3 && columnsValue !== 4 && columnsValue !== 5) {
+        throw new Error(`${at}.columns: debe ser 2, 3 o 4.`);
+      }
+      return {
+        id: elementId, type: 'cardGrid', columns: columnsValue,
+        gap: Math.min(30, nonnegative(v.gap ?? 8, `${at}.gap`)),
+        imageHeight: Math.min(230, Math.max(40, nonnegative(v.imageHeight ?? 95, `${at}.imageHeight`))),
+        cards: rawCards.map((raw, i) => {
+          const card = object(raw, `${at}.cards[${i}]`);
+          return {
+            id: id(card.id, ids),
+            title: str(card.title ?? '', `${at}.cards[${i}].title`),
+            text: str(card.text ?? '', `${at}.cards[${i}].text`),
+            image: str(card.image ?? '', `${at}.cards[${i}].image`),
+            imagePosition: choice(card.imagePosition ?? 'bottom', ['top', 'bottom'] as const, `${at}.cards[${i}].imagePosition`),
+            titleColor: optionalStr(card.titleColor, `${at}.cards[${i}].titleColor`),
+            borderColor: optionalStr(card.borderColor, `${at}.cards[${i}].borderColor`),
+          };
+        }),
+      };
+    }
     case 'responseArea':
       return { id: elementId, type: 'responseArea',
         style: choice(v.style ?? 'lines', responseStyles, `${at}.style`),

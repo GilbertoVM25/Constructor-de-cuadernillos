@@ -25,6 +25,8 @@ export type QuestionElement = {
   text: string;
   answerLines: number;
   richHtml?: string;
+  answerPosition?: 'below' | 'inline';
+  width?: 'full' | 'half';
 };
 
 
@@ -99,6 +101,25 @@ export type TextImageElement = {
   imageHeight: number;
 };
 
+export type InfoCard = {
+  id: string;
+  title: string;
+  text: string;
+  image: string;
+  imagePosition?: 'top' | 'bottom';
+  titleColor?: string;
+  borderColor?: string;
+};
+export type CardGridElement = {
+  id: string;
+  type: 'cardGrid';
+  columns: 2 | 3 | 4 | 5;
+  gap: number;
+  imageHeight: number;
+  cards: InfoCard[];
+};
+
+
 export type ContentElement =
   | QuestionElement
   | TextElement
@@ -106,7 +127,8 @@ export type ContentElement =
   | ImageElement
   | GalleryElement
   | ResponseAreaElement
-  | TextImageElement;
+  | TextImageElement
+  | CardGridElement;
 
 
 
@@ -157,13 +179,18 @@ export type WorkbookProject = {
   cover?: CoverSettings;
 };
 
-
+export type TableCellImage = {
+  src: string;
+  width?: number;
+  align?: 'left' | 'center' | 'right';
+};
 
 export type WorkbookTable = {
   id: string;
   headers: string[];
   rows: string[][];
   showHeaders: boolean;
+  cellImages?: Record<string, TableCellImage>;
 };
 
 export type TableTemplate =

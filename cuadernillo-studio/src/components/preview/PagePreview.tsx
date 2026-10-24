@@ -8,6 +8,7 @@ import {
 } from 'react';
 
 import { TextImageView } from '../editor/TextImageView';
+import { CardGridView } from '../editor/CardGridView';
 
 import { blockIcons } from '../../styles/blockIcons';
 
@@ -16,6 +17,8 @@ import DOMPurify from 'dompurify';
 import type {
   Block,
   Workbook,
+  QuestionElement,
+  ContentElement,
 } from '../../models/document';
 
 import {
@@ -92,6 +95,30 @@ type ElementSelectionProps = {
   ) => void;
 };
 
+function TableCellContent({ table, row, column, text }: {
+  table: { cellImages?: Record<string, { src: string; width?: number; align?: 'left' | 'center' | 'right' }> };
+  row: number;
+  column: number;
+  text: string;
+}) {
+  const image = table.cellImages?.[`${row}:${column}`];
+  return (
+    <div className="workbook-table-cell-content">
+      {image?.src && (
+        <img
+          className="workbook-table-cell-image"
+          src={image.src}
+          alt="Ilustración de la celda"
+          style={{ width: `${Math.max(20, Math.min(100, image.width ?? 85))}%`,
+            alignSelf: image.align === 'left' ? 'flex-start' : image.align === 'right' ? 'flex-end' : 'center' }}
+        />
+      )}
+      {text && <span className="workbook-table-cell-text">{text}</span>}
+      {!text && !image?.src && '\u00A0'}
+    </div>
+  );
+}
+
 function ContentElementsView({
   block,
   selectedElementId,
@@ -131,45 +158,11 @@ function ContentElementsView({
   };
 
 
-  if (elements.length === 0) return null;
-
-  return (
-    <div className="workbook-elements">
-      {elements.map((element) => {
-        if (element.type === 'text') {
-          return (
-            <div
+  const renderQuestion = (element: QuestionElement) => (
+<div
               className={elementClass(
                 element.id,
-                'workbook-text-element'
-              )}
-              onClick={(event) =>
-                selectElement(event, element.id)
-              }
-              key={element.id}
-            >
-              
-              {element.richHtml != null ? (
-                <div
-                  className="rich-text-rendered"
-                  dangerouslySetInnerHTML={{
-                    __html: cleanRichHtml(element.richHtml),
-                  }}
-                />
-              ) : (
-                element.content
-              )}
-
-            </div>
-          );
-        }
-
-        if (element.type === 'question') {
-          return (
-            <div
-              className={elementClass(
-                element.id,
-                'educational-question'
+                `educational-question ${element.answerPosition === 'inline' ? 'question-inline' : ''}`
               )}
               onClick={(event) =>
                 selectElement(event, element.id)
@@ -211,8 +204,62 @@ function ContentElementsView({
                 </div>
               )}
             </div>
+  );
+
+  // Solo preguntas half consecutivas comparten fila; nunca se reordenan.
+  const grouped: Array<ContentElement | [QuestionElement, QuestionElement]> = [];
+  for (let i = 0; i < elements.length; i++) {
+    const current = elements[i];
+    const next = elements[i + 1];
+    if (current.type === 'question' && current.width === 'half' &&
+        next?.type === 'question' && next.width === 'half') {
+      grouped.push([current, next]);
+      i++;
+    } else {
+      grouped.push(current);
+    }
+  }
+
+  if (elements.length === 0) return null;
+
+  return (
+    <div className="workbook-elements">
+      {grouped.map((entry) => {
+        if (Array.isArray(entry)) {
+          return <div className="question-pair" key={`${entry[0].id}-${entry[1].id}`}>
+            {entry.map(renderQuestion)}
+          </div>;
+        }
+        const element = entry;
+        if (element.type === 'text') {
+          return (
+            <div
+              className={elementClass(
+                element.id,
+                'workbook-text-element'
+              )}
+              onClick={(event) =>
+                selectElement(event, element.id)
+              }
+              key={element.id}
+            >
+              
+              {element.richHtml != null ? (
+                <div
+                  className="rich-text-rendered"
+                  dangerouslySetInnerHTML={{
+                    __html: cleanRichHtml(element.richHtml),
+                  }}
+                />
+              ) : (
+                element.content
+              )}
+
+            </div>
           );
         }
+
+        if (element.type === 'question') return renderQuestion(element);
 
         if (element.type === 'table') {
           const table = element.table;
@@ -246,7 +293,7 @@ function ContentElementsView({
                     <tr key={rowIndex}>
                       {table.headers.map((_, columnIndex) => (
                         <td key={columnIndex}>
-                          {row[columnIndex] || '\u00A0'}
+                          <TableCellContent table={table} row={rowIndex} column={columnIndex} text={row[columnIndex] ?? ''} />
                         </td>
                       ))}
                     </tr>
@@ -352,6 +399,15 @@ function ContentElementsView({
           );
         }
         
+        if (element.type === 'cardGrid') {
+          return <CardGridView
+            key={element.id}
+            value={element}
+            className={elementClass(element.id, '')}
+            onClick={(event) => selectElement(event, element.id)}
+          />;
+        }
+
         if (element.type === 'responseArea') {
           const areaHeight = Math.max(
             80,
@@ -517,7 +573,7 @@ function WorkbookTableView({
             <tr key={rowIndex}>
               {row.map((cell, columnIndex) => (
                 <td key={columnIndex}>
-                  {cell || '\u00A0'}
+                  <TableCellContent table={table} row={rowIndex} column={columnIndex} text={cell ?? ''} />
                 </td>
               ))}
             </tr>
@@ -584,9 +640,11 @@ function BlockCard({
 
       </div>
 
-      <div className="block-body">
-        {block.body}
-      </div>
+      {block.body?.trim() && (
+        <div className="block-body">
+          {block.body}
+        </div>
+      )}
 
       
       {block.image && hasPhoto && (
@@ -914,7 +972,7 @@ export function PagePreview({
       const questions = (block.elements ?? []).reduce(
         (total, element) =>
           total + (element.type === 'question'
-            ? Math.min(20, Math.max(0, element.answerLines))
+            ? (element.answerPosition === 'inline' ? 0 : Math.min(20, Math.max(0, element.answerLines)))
             : 0),
         0
       );

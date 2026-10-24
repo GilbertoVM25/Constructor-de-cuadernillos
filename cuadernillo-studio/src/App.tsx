@@ -108,6 +108,12 @@ export default function App() {
   const [showProjectManager, setShowProjectManager] =
     useState(false);
 
+  const [showSequenceImport, setShowSequenceImport] = useState(false);
+  const [sequenceJSONText, setSequenceJSONText] = useState('');
+  const [sequenceImportAction, setSequenceImportAction] = useState<'add' | 'replace'>('add');
+  const [sequenceImportError, setSequenceImportError] = useState('');
+
+
   const [newProjectName, setNewProjectName] =
     useState('');
 
@@ -797,6 +803,77 @@ useEffect(() => {
     };
 
 
+  const importSequenceIntoCurrentProject = () => {
+    try {
+      const parsed: unknown = JSON.parse(sequenceJSONText.trim());
+      // Acepta un objeto de secuencia, no un cuadernillo completo.
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Pega un objeto JSON de una secuencia.');
+      }
+      const raw = parsed as Record<string, unknown>;
+      if (!Array.isArray(raw.blocks) || typeof raw.title !== 'string') {
+        throw new Error('El objeto debe contener title y blocks.');
+      }
+      if (!Number.isInteger(raw.sequence) || (raw.sequence as number) < 1) {
+        throw new Error('La propiedad sequence debe ser un número entero mayor que cero.');
+      }
+      const sequenceNumber = raw.sequence as number;
+      // Reutiliza el validador existente (textImage, cellImages, etc.).
+      const normalized = importWorkbookJSON({
+        name: project.name,
+        sequences: [raw],
+      }).sequences[0];
+      const existingIndex = project.sequences.findIndex(
+        (item) => item.sequence === sequenceNumber
+      );
+      if (existingIndex >= 0 && sequenceImportAction === 'add') {
+        throw new Error(`La secuencia ${sequenceNumber} ya existe. Selecciona «Reemplazar» para actualizarla.`);
+      }
+      if (existingIndex === -1 && sequenceImportAction === 'replace') {
+        throw new Error(`La secuencia ${sequenceNumber} no existe. Selecciona «Agregar».`);
+      }
+      if (existingIndex >= 0 && sequenceImportAction === 'replace') {
+        const original = project.sequences[existingIndex];
+        if (!window.confirm(
+          `¿Reemplazar la secuencia ${sequenceNumber}: ${original.title}?\n\n` +
+          'Los cambios anteriores de esa secuencia se perderán. Los demás contenidos permanecerán intactos.'
+        )) return;
+      }
+      // El importador normaliza sequence desde el índice del arreglo (0 => 1).
+      // Restauramos el número original al insertar una secuencia suelta.
+      const importedSequence: WorkbookSequence = {
+        ...normalized,
+        id: existingIndex >= 0
+          ? project.sequences[existingIndex].id
+          : crypto.randomUUID(),
+        sequence: sequenceNumber,
+      };
+      const nextSequences = [...project.sequences];
+      if (existingIndex >= 0) {
+        nextSequences[existingIndex] = importedSequence;
+      } else {
+        nextSequences.push(importedSequence);
+        nextSequences.sort((a, b) => a.sequence - b.sequence);
+      }
+      setProject((current) => ({
+        ...current,
+        sequences: nextSequences,
+      }));
+      setActiveSequenceId(importedSequence.id);
+      setSelected(null);
+      setSelectedElementId(null);
+      resetHistory();
+      setPdfPageCounts({});
+      setShowSequenceImport(false);
+      setSequenceJSONText('');
+      setSequenceImportError('');
+    } catch (error) {
+      setSequenceImportError(
+        error instanceof Error ? error.message : 'No se pudo importar la secuencia.'
+      );
+    }
+  };
+
   const exportJSON = () => {
     const blob = new Blob([JSON.stringify(project, null, 2)], {
       type: 'application/json',
@@ -1256,6 +1333,14 @@ useEffect(() => {
           + Nueva secuencia
         </button>
 
+        <button type="button" onClick={() => {
+          setSequenceImportError('');
+          setSequenceImportAction('add');
+          setShowSequenceImport(true);
+        }}>
+          Importar secuencia
+        </button>
+
         
         <button
           type="button"
@@ -1532,6 +1617,43 @@ useEffect(() => {
         })}
       </div>
       
+      {showSequenceImport && (
+        <div className="sequence-import-overlay" onClick={() => setShowSequenceImport(false)}>
+          <div className="sequence-import-modal" role="dialog" aria-modal="true"
+            aria-label="Importar secuencia" onClick={(event) => event.stopPropagation()}>
+            <div className="sequence-import-header">
+              <h2>Importar secuencia</h2>
+              <button type="button" onClick={() => setShowSequenceImport(false)} aria-label="Cerrar">✕</button>
+            </div>
+            <p>Pega el objeto JSON de una secuencia. Se conservará el cuadernillo actual.</p>
+            <textarea aria-label="Objeto JSON de la secuencia" rows={12}
+              spellCheck={false} value={sequenceJSONText}
+              placeholder={'{\n  "sequence": 5,\n  "title": "...",\n  "subtitle": "...",\n  "blocks": []\n}'}
+              onChange={(event) => {
+                setSequenceJSONText(event.target.value);
+                setSequenceImportError('');
+              }} />
+            <fieldset className="sequence-import-options">
+              <legend>Acción</legend>
+              <label><input type="radio" name="sequence-import-action"
+                checked={sequenceImportAction === 'add'}
+                onChange={() => setSequenceImportAction('add')} /> Agregar secuencia</label>
+              <label><input type="radio" name="sequence-import-action"
+                checked={sequenceImportAction === 'replace'}
+                onChange={() => setSequenceImportAction('replace')} /> Reemplazar secuencia del mismo número</label>
+            </fieldset>
+            {sequenceImportError && <p className="sequence-import-error" role="alert">{sequenceImportError}</p>}
+            <div className="sequence-import-buttons">
+              <button type="button" onClick={() => setShowSequenceImport(false)}>Cancelar</button>
+              <button type="button" disabled={!sequenceJSONText.trim()}
+                onClick={importSequenceIntoCurrentProject}>
+                {sequenceImportAction === 'add' ? 'Agregar' : 'Reemplazar'} secuencia
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showProjectManager && (
         <ProjectManager
           projects={projectList}
