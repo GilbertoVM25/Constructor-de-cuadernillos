@@ -101,6 +101,14 @@ export const blockRegistry: Record<
     defaultHeight: 200,
   },
 
+  image: {
+    kind: 'image',
+    label: 'Imagen independiente',
+    defaultTitle: '',
+    description: 'Ilustración independiente sin encabezado.',
+    defaultHeight: 90,
+  },
+
   information: {
     kind: 'information',
     label: 'Recuadro informativo',

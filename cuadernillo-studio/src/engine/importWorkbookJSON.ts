@@ -14,7 +14,7 @@ type RecordValue = Record<string, unknown>;
 const kinds: readonly string[] = [
   'purpose', 'pda', 'start', 'development', 'question',
   'case', 'activity', 'pisa', 'closing', 'application',
-  'selfEvaluation', 'information',
+  'selfEvaluation', 'information', 'image',
 ];
 const layouts = ['auto', 'half', 'full'] as const;
 const columns = ['auto', 'left', 'right'] as const;
@@ -96,7 +96,10 @@ function element(value: unknown, at: string, ids: Set<string>): ContentElement {
   switch (v.type) {
     case 'text':
       return { id: elementId, type: 'text', content: str(v.content ?? '', `${at}.content`),
-        richHtml: optionalStr(v.richHtml, `${at}.richHtml`) };
+        richHtml: optionalStr(v.richHtml, `${at}.richHtml`),
+        ...(v.fontSize === undefined ? {} : { fontSize: choice(v.fontSize, Array.from({ length: 13 }, (_, i) => i + 8), `${at}.fontSize`) }),
+        ...(v.lineHeight === undefined ? {} : { lineHeight: choice(v.lineHeight, [1.2, 1.4, 1.6] as const, `${at}.lineHeight`) }),
+      };
     case 'question':
       return { id: elementId, type: 'question', text: str(v.text ?? '', `${at}.text`),
         answerLines: nonnegative(v.answerLines ?? 0, `${at}.answerLines`),
@@ -109,7 +112,8 @@ function element(value: unknown, at: string, ids: Set<string>): ContentElement {
       return { id: elementId, type: 'image', src: str(v.src ?? '', `${at}.src`),
         caption: str(v.caption ?? '', `${at}.caption`),
         width: Math.max(1, Math.min(100, nonnegative(v.width ?? 100, `${at}.width`))),
-        align: choice(v.align ?? 'center', ['left', 'center', 'right'] as const, `${at}.align`) };
+        align: choice(v.align ?? 'center', ['left', 'center', 'right'] as const, `${at}.align`),
+        height: v.height === undefined ? undefined : Math.max(40, Math.min(800, nonnegative(v.height, `${at}.height`))) };
     case 'gallery':
       return { id: elementId, type: 'gallery', gap: nonnegative(v.gap ?? 8, `${at}.gap`),
         images: array(v.images, `${at}.images`).map((img, i) => {
@@ -160,6 +164,9 @@ function element(value: unknown, at: string, ids: Set<string>): ContentElement {
         }),
       };
     }
+    case 'pageBreak':
+      return { id: elementId, type: 'pageBreak',
+        mode: choice(v.mode ?? 'auto', ['auto', 'always'] as const, `${at}.mode`) };
     case 'responseArea':
       return { id: elementId, type: 'responseArea',
         style: choice(v.style ?? 'lines', responseStyles, `${at}.style`),

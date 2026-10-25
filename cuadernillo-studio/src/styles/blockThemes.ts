@@ -87,7 +87,14 @@ export const blockThemes: Record<BlockKind, BlockStyle> = {
     headerText: '#176E38',
     },
 
-    information: {
+    image: {
+    border: 'transparent',
+    background: 'transparent',
+    headerBackground: 'transparent',
+    headerText: 'inherit',
+  },
+
+  information: {
     border: '#7B48B3',
     background: '#FFFFFF',
     headerBackground: '#F3EDFA',

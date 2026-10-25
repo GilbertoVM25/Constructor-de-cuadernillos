@@ -548,7 +548,10 @@ useEffect(() => {
     column: 'auto',
     layout: 'auto',
     minHeight: definition.defaultHeight,
-    elements: [],
+    elements: kind === 'image' ? [{
+      id: crypto.randomUUID(), type: 'image', src: '', caption: '',
+      width: 100, align: 'center', height: 160,
+    }] : [],
     checklist: template.checklist,
     multipleChoice: template.multipleChoice,
     };

@@ -14,7 +14,8 @@ export type BlockKind =
   | 'closing'
   | 'application'
   | 'selfEvaluation'
-  | 'information';
+  | 'information'
+  | 'image';
 
 
 export type BlockLayout = 'auto' | 'half' | 'full';
@@ -49,6 +50,10 @@ export type TextElement = {
   type: 'text';
   content: string;
   richHtml?: string;
+  /** Tamaño de fuente en píxeles; si se omite, conserva el CSS actual. */
+  fontSize?: number;
+  /** Interlineado unitario; si se omite, conserva el CSS actual. */
+  lineHeight?: number;
 };
 
 export type TableElement = {
@@ -64,6 +69,8 @@ export type ImageElement = {
   caption: string;
   width: number;
   align: 'left' | 'center' | 'right';
+  /** Altura reservada en px; la imagen conserva sus proporciones. */
+  height?: number;
 };
 
 
@@ -120,6 +127,12 @@ export type CardGridElement = {
 };
 
 
+export type PageBreakElement = {
+  id: string;
+  type: 'pageBreak';
+  mode: 'auto' | 'always';
+};
+
 export type ContentElement =
   | QuestionElement
   | TextElement
@@ -128,7 +141,8 @@ export type ContentElement =
   | GalleryElement
   | ResponseAreaElement
   | TextImageElement
-  | CardGridElement;
+  | CardGridElement
+  | PageBreakElement;
 
 
 
@@ -143,6 +157,7 @@ export type Block = {
   image?: string;
   /** Identificador del bloque original, solo en la vista previa. */
     sourceId?: string;
+  breakBefore?: 'auto' | 'always';
 
     /** Evita mostrar líneas antiguas en cada fragmento. */
     suppressLegacyLines?: boolean;

@@ -196,6 +196,7 @@ export function ContentEditor({
         caption: '',
         width: 100,
         align: 'center',
+        height: 160,
       },
     ]);
     setExpandedId(id);
@@ -234,6 +235,12 @@ export function ContentEditor({
         text: 'Descripción del concepto.', image: '', imagePosition: 'bottom' as const,
       })),
     }]);
+    setExpandedId(id);
+  };
+
+  const addPageBreak = () => {
+    const id = crypto.randomUUID();
+    save([...elements, { id, type: 'pageBreak', mode: 'auto' }]);
     setExpandedId(id);
   };
 
@@ -524,6 +531,7 @@ export function ContentEditor({
         </button>
         <button type="button" onClick={addTextImage}>+ Texto + Imagen</button>
         <button type="button" onClick={addCardGrid}>+ Tarjetas informativas</button>
+        <button type="button" onClick={addPageBreak}>+ Divisor de bloque</button>
         <button type="button" onClick={addGallery}>
           + Galería
         </button>
@@ -586,6 +594,8 @@ export function ContentEditor({
                               ? 'Imagen'
                               : element.type === 'cardGrid'
                                 ? 'Tarjetas informativas'
+                              : element.type === 'pageBreak'
+                                ? 'Divisor de bloque'
                               : element.type === 'responseArea'
                                 ? 'Espacio de respuesta'
                                 : 'Galería'}
@@ -601,6 +611,8 @@ export function ContentEditor({
                           ? `${element.table.headers.length} columnas · ${element.table.rows.length} filas`
                           : element.type === 'cardGrid'
                             ? `${element.cards.length} tarjetas · ${element.columns} columnas`
+                          : element.type === 'pageBreak'
+                            ? (element.mode === 'always' ? 'Nueva página obligatoria' : 'División flexible')
                           : element.type === 'responseArea'
                             ? `${element.style} · ${element.height} px`
                             : element.type === 'image'
@@ -638,6 +650,18 @@ export function ContentEditor({
             >
 
               
+              {element.type === 'pageBreak' && (
+                <div className="page-break-editor">
+                  <label htmlFor={`break-mode-${element.id}`}>Tipo de división</label>
+                  <select id={`break-mode-${element.id}`} value={element.mode}
+                    onChange={(event) => updateElement(element.id, {
+                      type: 'pageBreak', mode: event.target.value as 'auto' | 'always',
+                    })}>
+                    <option value="auto">Flexible: continuar en la misma página si cabe</option>
+                    <option value="always">Obligatorio: empezar en la página siguiente</option>
+                  </select>
+                </div>
+              )}
               {element.type === 'text' && (
                 <div className="content-rich-field">
                   <span>Contenido</span>
@@ -652,6 +676,36 @@ export function ContentEditor({
                       })
                     }
                   />
+                  <div className="text-typography-controls">
+                    <label>
+                      Tamaño de fuente (px)
+                      <select
+                        value={element.fontSize ?? ''}
+                        onChange={(event) => updateElement(element.id, {
+                          fontSize: event.target.value === '' ? undefined : Number(event.target.value),
+                        })}
+                      >
+                        <option value="">Predeterminado (13 px)</option>
+                        {Array.from({ length: 13 }, (_, i) => i + 8).map((size) => (
+                          <option key={size} value={size}>{size} px</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Interlineado
+                      <select
+                        value={element.lineHeight ?? ''}
+                        onChange={(event) => updateElement(element.id, {
+                          lineHeight: event.target.value === '' ? undefined : Number(event.target.value),
+                        })}
+                      >
+                        <option value="">Predeterminado (1.45)</option>
+                        <option value="1.2">Compacto (1.2)</option>
+                        <option value="1.4">Normal (1.4)</option>
+                        <option value="1.6">Amplio (1.6)</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
               )}
 
@@ -984,6 +1038,16 @@ export function ContentEditor({
                           width: Number(event.target.value),
                         })
                       }
+                    />
+                  </label>
+
+                  <label>
+                    Altura de imagen (px; vacío = tamaño natural)
+                    <input type="number" min={40} max={800} step={10}
+                      value={element.height ?? ''}
+                      onChange={(event) => updateElement(element.id, {
+                        height: event.target.value === '' ? undefined : Math.max(40, Math.min(800, Number(event.target.value) || 160)),
+                      })}
                     />
                   </label>
 

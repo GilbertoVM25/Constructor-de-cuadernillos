@@ -197,6 +197,7 @@ export function buildRows(
       third &&
       !wantsFull(second) &&
       !wantsFull(third) &&
+      ![first, second, third].some((block) => block.kind === 'image') &&
       shouldStack(
         first,
         second,
@@ -338,6 +339,7 @@ export function paginateAdaptive(
     );
 
   const hasComplexContent = (block: Block): boolean =>
+    block.kind === 'image' ||
     Boolean(block.table) ||
     Boolean(block.checklist) ||
     Boolean(block.multipleChoice) ||

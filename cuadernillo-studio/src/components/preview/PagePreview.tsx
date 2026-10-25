@@ -27,10 +27,7 @@ import {
   type BlockMeasurements,
 } from '../../engine/paginate';
 
-import {
-  createAtomicBlocks,
-  splitOversizedBlocks,
-} from '../../engine/splitBlocks';
+import { splitBlocksAtDividers } from '../../engine/pageBreaks';
 
 
 function cleanRichHtml(html: string): string {
@@ -231,6 +228,7 @@ function ContentElementsView({
           </div>;
         }
         const element = entry;
+        if (element.type === 'pageBreak') return null;
         if (element.type === 'text') {
           return (
             <div
@@ -242,6 +240,10 @@ function ContentElementsView({
                 selectElement(event, element.id)
               }
               key={element.id}
+              style={{
+                ...(element.fontSize !== undefined ? { fontSize: `${element.fontSize}px` } : {}),
+                ...(element.lineHeight !== undefined ? { lineHeight: element.lineHeight } : {}),
+              }}
             >
               
               {element.richHtml != null ? (
@@ -330,9 +332,10 @@ function ContentElementsView({
                   src={element.src}
                   alt={element.caption || 'Imagen educativa'}
                   className="workbook-element-image"
+                  style={element.height ? { height: element.height, objectFit: 'contain' } : undefined}
                 />
               ) : (
-                <div className="workbook-image-placeholder">
+                <div className="workbook-image-placeholder" style={element.height ? { minHeight: element.height } : undefined}>
                   Imagen sin seleccionar
                 </div>
               )}
@@ -610,15 +613,15 @@ function BlockCard({
 
   return (
     <div
-      className={`block-card ${selected ? 'selected' : ''}`}
+      className={`block-card ${block.kind === 'image' ? 'block-card-image-only' : ''} ${selected ? 'selected' : ''}`}
       style={{
         borderColor: theme.border,
         backgroundColor: theme.background,
-        minHeight: block.minHeight,
+        minHeight: block.kind === 'image' ? undefined : block.minHeight,
       }}
       onClick={() => onSelect(block.sourceId ?? block.id)}
     >
-      <div
+      {block.kind !== 'image' && <div
         className="block-title"
         style={{
           backgroundColor: theme.headerBackground,
@@ -638,7 +641,7 @@ function BlockCard({
 
       <strong>{block.title}</strong>
 
-      </div>
+      </div>}
 
       {block.body?.trim() && (
         <div className="block-body">
@@ -842,6 +845,11 @@ export function PagePreview({
 
   const [showPaginationDebug, setShowPaginationDebug] = useState(false);
 
+  const visualBlocks = useMemo(
+    () => splitBlocksAtDividers(workbook.blocks),
+    [workbook.blocks]
+  );
+
   const measurementRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLDivElement>(null);
 
@@ -898,7 +906,7 @@ export function PagePreview({
           const sameCapacity =
             Math.abs(previous.capacity - capacity) < 0.5;
 
-          const sameBlocks = workbook.blocks.every(
+          const sameBlocks = visualBlocks.every(
             (block) => {
               const old = previous.blocks[block.id];
               const current = next[block.id];
@@ -916,7 +924,7 @@ export function PagePreview({
             sameCapacity &&
             sameBlocks &&
             Object.keys(previous.blocks).length ===
-              workbook.blocks.length
+              visualBlocks.length
           ) {
             return previous;
           }
@@ -947,17 +955,17 @@ export function PagePreview({
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [workbook]);
+  }, [workbook, visualBlocks]);
 
   
   const pages = useMemo(
     () =>
       paginateAdaptive(
-        workbook.blocks,
+        visualBlocks,
         measurements.blocks,
         measurements.capacity
       ),
-    [workbook.blocks, measurements]
+    [visualBlocks, measurements]
   );
 
   useEffect(() => {
@@ -1076,7 +1084,7 @@ export function PagePreview({
               })}
               <details>
                 <summary>Alturas medidas de todos los bloques</summary>
-                {workbook.blocks.map((block) => {
+                {visualBlocks.map((block) => {
                   const size = measurements.blocks[block.id];
                   return (
                     <div key={block.id}>
@@ -1097,7 +1105,7 @@ export function PagePreview({
         aria-hidden="true"
         ref={measurementRef}
       >
-        {workbook.blocks.map((block) => (
+        {visualBlocks.map((block) => (
           <div
             className="measure-half"
             key={`half-${block.id}`}
@@ -1117,7 +1125,7 @@ export function PagePreview({
           </div>
         ))}
 
-        {workbook.blocks.map((block) => (
+        {visualBlocks.map((block) => (
           <div
             className="measure-full"
             key={`full-${block.id}`}
