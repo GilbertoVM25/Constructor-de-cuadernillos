@@ -180,6 +180,7 @@ export type Workbook = {
   blocks: Block[];
   contentNumber?: number;
   contentTitle?: string;
+  contentShortTitle?: string;
 };
 
 

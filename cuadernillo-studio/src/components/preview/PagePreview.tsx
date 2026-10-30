@@ -813,8 +813,8 @@ function Footer({
           ? `Contenido ${workbook.contentNumber}`
           : 'Contenido sin asignar'}
 
-        {workbook.contentTitle?.trim()
-          ? ` · ${workbook.contentTitle}`
+        {(workbook.contentShortTitle?.trim() || workbook.contentTitle?.trim())
+          ? ` · ${workbook.contentShortTitle?.trim() || workbook.contentTitle?.trim()}`
           : ''}
       </span>
 

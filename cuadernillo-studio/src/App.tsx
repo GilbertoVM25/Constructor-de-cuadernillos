@@ -1399,6 +1399,20 @@ useEffect(() => {
             }
           />
         </label>
+        <label>
+          Nombre corto para el pie de página
+          <input
+            type="text"
+            value={workbook.contentShortTitle ?? ''}
+            placeholder="Ej. Mezclas, compuestos y elementos"
+            onChange={(event) =>
+              update({
+                ...workbook,
+                contentShortTitle: event.target.value,
+              })
+            }
+          />
+        </label>
       </div>
 
 

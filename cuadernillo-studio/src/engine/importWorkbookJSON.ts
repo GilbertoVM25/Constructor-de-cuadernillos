@@ -220,6 +220,7 @@ function sequence(value: unknown, index: number, ids: Set<string>): WorkbookSequ
     blocks,
     contentNumber: v.contentNumber === undefined ? undefined : nonnegative(v.contentNumber, `${at}.contentNumber`),
     contentTitle: optionalStr(v.contentTitle, `${at}.contentTitle`),
+    contentShortTitle: optionalStr(v.contentShortTitle, `${at}.contentShortTitle`),
   };
 }
 function cover(value: unknown): CoverSettings | undefined {
