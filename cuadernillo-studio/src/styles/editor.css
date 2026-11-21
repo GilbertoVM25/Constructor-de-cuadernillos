@@ -937,7 +937,7 @@ body {
 }
 
 .workbook-checklist th:first-child {
-  width: 49%;
+  width: 59%;
 }
 
 .workbook-checklist .check-cell {
@@ -3605,6 +3605,7 @@ footer .footer-content {
 
 .workbook-response-label {
   font-weight: 600;
+  font-size: 13px;
   margin-bottom: 8px;
   line-height: 1.4;
 }
@@ -4066,8 +4067,19 @@ footer .footer-content {
 }
 
 /* Divisor de bloque: visible solo en el editor, sin ocupar espacio impreso. */
-.page-break-editor { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px dashed #6e9ddc; border-radius: 6px; background: rgba(67,132,215,.06); }
-.page-break-editor select { max-width: 100%; }
+.page-break-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed #6e9ddc;
+  border-radius: 6px;
+  background: rgba(67, 132, 215, .06);
+}
+
+.page-break-editor select {
+  max-width: 100%;
+}
 
 /* Configuración individual de tipografía en elementos Texto */
 .text-typography-controls {
@@ -4076,6 +4088,7 @@ footer .footer-content {
   gap: 10px;
   margin-top: 10px;
 }
+
 .text-typography-controls label {
   display: flex;
   flex-direction: column;
@@ -4083,12 +4096,16 @@ footer .footer-content {
   font-size: 12px;
   font-weight: 600;
 }
+
 .text-typography-controls select {
   min-width: 0;
   width: 100%;
 }
+
 @media (max-width: 700px) {
-  .text-typography-controls { grid-template-columns: 1fr; }
+  .text-typography-controls {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Bloque de imagen sin encabezado y sin rellenos que desperdicien A4. */
@@ -4099,6 +4116,233 @@ footer .footer-content {
   box-shadow: none;
   min-height: 0 !important;
 }
-.block-card-image-only > .workbook-elements { margin: 0 !important; padding: 0 !important; }
-.block-card-image-only .workbook-image-element { margin: 0; }
-.block-card-image-only .workbook-image-placeholder { display:flex; align-items:center; justify-content:center; border: 1px dashed #b7c1cd; }
+
+.block-card-image-only>.workbook-elements {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.block-card-image-only .workbook-image-element {
+  margin: 0;
+}
+
+.block-card-image-only .workbook-image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #b7c1cd;
+}
+
+
+/* Parejas de bloques con proporción fija; los estilos precedentes siguen
+   rigiendo las filas no configuradas. */
+.measure-ratio {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.measure-ratio>.paper-cell {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.measure-ratio [data-measure-id] {
+  display: block;
+  width: 100%;
+}
+
+/* En filas de altura independiente la imagen no estira su bloque vecino. */
+.paper-row.paper-row-independent,
+.paper-row:not(.paper-row-full).paper-row-independent {
+  align-items: start !important;
+}
+
+.paper-row.paper-row-independent>.paper-cell {
+  align-self: start !important;
+  display: block !important;
+}
+
+.paper-row.paper-row-independent>.paper-cell>.block-card {
+  flex: none !important;
+  align-self: flex-start !important;
+  width: 100%;
+}
+
+@media print {
+  .paper-row.paper-row-independent {
+    align-items: start !important;
+  }
+
+  .paper-row.paper-row-independent>.paper-cell {
+    display: block !important;
+    align-self: start !important;
+  }
+
+  .paper-row.paper-row-independent>.paper-cell>.block-card {
+    flex: none !important;
+  }
+}
+
+.row-layout-controls {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid #c9d5e7;
+  border-radius: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.row-layout-controls legend {
+  font-size: 13px;
+  font-weight: bold;
+  color: #254d7d;
+  padding: 0 4px;
+}
+
+.row-layout-controls label:not(.row-layout-checkbox) {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.row-layout-checkbox {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.row-layout-checkbox input {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.row-layout-hint {
+  color: #637185;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 3px 0;
+}
+
+
+/* Centrar verticalmente los bloques Imagen
+   cuando comparten fila con otro bloque. */
+
+.paper-row:not(.paper-row-full)>.paper-cell:has(> .block-card-image-only) {
+  align-self: center !important;
+  display: block !important;
+}
+
+/* Conservar la altura natural de la imagen. */
+.paper-row:not(.paper-row-full)>.paper-cell>.block-card-image-only {
+  flex: none !important;
+  height: auto !important;
+}
+
+.workbook-data-table.workbook-data-table--borderless,
+.workbook-data-table.workbook-data-table--borderless th,
+.workbook-data-table.workbook-data-table--borderless td {
+  border: 0 !important;
+}
+
+
+/* Centrar verticalmente el texto junto a las imágenes */
+.workbook-text-image-text {
+  align-self: center;
+}
+
+
+/* Título del bloque PDA */
+.block-card[data-kind="pda"] .block-title strong {
+  font-size: 5px;
+  line-height: 1.2;
+}
+
+
+/* Encabezados de la tabla de evaluación */
+.workbook-checklist th {
+  text-align: center;
+  vertical-align: middle;
+  white-space: normal;
+}
+
+/* Encabezado de la primera columna */
+.workbook-checklist th:first-child {
+  text-align: left;
+}
+
+
+/* ================================================
+   ENCABEZADO COMPACTO EN PÁGINAS DE CONTINUACIÓN
+   La primera página de cada secuencia conserva .paper-head original.
+   Esta misma regla se aplica a la vista previa, a las sondas de
+   medición A4 y a la impresión PDF.
+   ================================================ */
+.paper-head.paper-head-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 28px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #d9e5f1;
+}
+
+.paper-head-compact-sequence {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #34506b;
+}
+
+.paper-head-compact-continuation {
+  font-weight: 400;
+  color: #697b91;
+}
+
+.paper-head-compact-subject {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #0a56c3;
+  white-space: nowrap;
+}
+
+/* Encabezado completo: primera página de cada secuencia */
+
+.paper-head:not(.paper-head-compact) {
+  grid-template-columns: 24% minmax(0, 1fr) 14%;
+  gap: 10px;
+}
+
+.paper-head:not(.paper-head-compact) > div:nth-child(2) {
+  min-width: 0;
+}
+
+.paper-head:not(.paper-head-compact) .sequence {
+  font-size: 18px;
+  padding: 12px 8px;
+  white-space: nowrap;
+}
+
+.paper-head:not(.paper-head-compact) h1 {
+  font-size: 23px;
+  line-height: 1.2;
+  overflow-wrap: break-word;
+}
+
+.paper-head:not(.paper-head-compact) .subject {
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+.paper-head:not(.paper-head-compact) .subject small {
+  font-size: 10px;
+  white-space: nowrap;
+}

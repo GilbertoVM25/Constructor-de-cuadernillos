@@ -26,6 +26,16 @@ export function Inspector({
   onChange,
   onBlockChange,
 }: InspectorProps) {
+  const selectedIndex = selected ? workbook.blocks.findIndex((item) => item.id === selected.id) : -1;
+  const nextBlock = selectedIndex >= 0 ? workbook.blocks[selectedIndex + 1] : undefined;
+  const previousBlock = selectedIndex > 0 ? workbook.blocks[selectedIndex - 1] : undefined;
+  const pairedFromPrevious = previousBlock?.rowLayout?.partnerId === selected?.id;
+  const canPair = Boolean(selected && nextBlock && !pairedFromPrevious &&
+    selected.kind !== 'purpose' && selected.kind !== 'pda' &&
+    nextBlock.kind !== 'purpose' && nextBlock.kind !== 'pda');
+  const activePair = Boolean(canPair && selected?.rowLayout?.partnerId === nextBlock?.id);
+  const isImagePair = selected?.kind === 'image' || nextBlock?.kind === 'image';
+
   return (
     <aside className="inspector">
       <h2>Propiedades</h2>
@@ -119,6 +129,61 @@ export function Inspector({
               </option>
             </select>
           </label>
+
+          {pairedFromPrevious && (
+            <p className="row-layout-hint">Este bloque pertenece a una fila configurada desde «{previousBlock?.title || 'el bloque anterior'}».</p>
+          )}
+
+          {canPair && (
+            <fieldset className="row-layout-controls">
+              <legend>Distribución personalizada de fila</legend>
+              <label className="row-layout-checkbox">
+                <input
+                  type="checkbox"
+                  checked={activePair}
+                  onChange={(event) => onBlockChange(selected.id, {
+                    rowLayout: event.target.checked ? {
+                      partnerId: nextBlock!.id,
+                      leftPercent: selected.rowLayout?.leftPercent ?? 50,
+                      equalHeight: selected.rowLayout?.equalHeight ?? !isImagePair,
+                    } : undefined,
+                  })}
+                />
+                Emparejar con el bloque siguiente
+              </label>
+              <p className="row-layout-hint">Siguiente: {nextBlock?.title || 'Bloque sin título'}. Se mantendrán juntos en la misma fila mientras quepan.</p>
+              {activePair && (
+                <>
+                  <label>
+                    Anchuras (izquierda / derecha)
+                    <select
+                      value={selected.rowLayout!.leftPercent}
+                      onChange={(event) => onBlockChange(selected.id, {
+                        rowLayout: { ...selected.rowLayout!, leftPercent: Number(event.target.value) as 30 | 40 | 50 | 60 | 70 },
+                      })}
+                    >
+                      <option value={30}>30 % / 70 %</option>
+                      <option value={40}>40 % / 60 %</option>
+                      <option value={50}>50 % / 50 %</option>
+                      <option value={60}>60 % / 40 %</option>
+                      <option value={70}>70 % / 30 %</option>
+                    </select>
+                  </label>
+                  <label className="row-layout-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selected.rowLayout!.equalHeight}
+                      onChange={(event) => onBlockChange(selected.id, {
+                        rowLayout: { ...selected.rowLayout!, equalHeight: event.target.checked },
+                      })}
+                    />
+                    Igualar alturas de los dos bloques
+                  </label>
+                  <p className="row-layout-hint">La pareja prevalece sobre «Media página» o «Ancho completo». La altura se mide según la proporción elegida.</p>
+                </>
+              )}
+            </fieldset>
+          )}
 
           <label>
             Altura mínima (px)

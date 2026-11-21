@@ -149,6 +149,20 @@ export function TableEditor({
             Mostrar encabezados
           </label>
 
+          <label className="table-header-toggle">
+            <input
+              type="checkbox"
+              checked={table.showBorders !== false}
+              onChange={(event) =>
+                updateTable({
+                  ...table,
+                  showBorders: event.target.checked,
+                })
+              }
+            />
+            Mostrar bordes de las celdas
+          </label>
+
           <h4>Columnas</h4>
 
           {table.headers.map((header, index) => (

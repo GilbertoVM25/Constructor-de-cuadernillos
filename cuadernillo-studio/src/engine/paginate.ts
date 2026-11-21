@@ -3,7 +3,7 @@ import type { Block } from '../models/document';
 
 export type BlockMeasurements = Record<
   string,
-  { half: number; full: number }
+  { half: number; full: number; '30'?: number; '40'?: number; '60'?: number; '70'?: number }
 >;
 
 export type PageRow = {
@@ -12,6 +12,9 @@ export type PageRow = {
   leftStack?: Block[];
   full?: Block;
   height: number;
+  /** Proporción del bloque izquierdo; si falta se usa 50/50. */
+  leftPercent?: number;
+  equalHeight?: boolean;
 };
 
 export type Page = {
@@ -52,6 +55,22 @@ function getHeight(
 ): number {
   return measurements[block.id]?.[width] ??
     estimateHeight(block);
+}
+
+/** Usa la altura medida al ancho real, sin extrapolar la altura a partir de 50 %. */
+function atPercent(block: Block, measurements: BlockMeasurements, percent: number): number {
+  if (percent === 50) return getHeight(block, measurements, 'half');
+  const measured = measurements[block.id]?.[String(percent) as '30' | '40' | '60' | '70'];
+  return measured && measured > 0 ? measured : getHeight(block, measurements, 'half');
+}
+
+/** Solo activa la pareja si los IDs siguen siendo adyacentes. */
+function explicitRow(first: Block, second?: Block) {
+  return first.rowLayout && second &&
+    first.rowLayout.partnerId === (second.sourceId ?? second.id) &&
+    second.breakBefore !== 'always'
+      ? first.rowLayout
+      : undefined;
 }
 
 function getLayout(block: Block): 'auto' | 'half' | 'full' {
@@ -141,7 +160,7 @@ function rowHeight(
   }
 
   const left = row.left
-    ? getHeight(row.left, measurements)
+    ? (row.leftPercent ? atPercent(row.left, measurements, row.leftPercent) : getHeight(row.left, measurements))
     : (row.leftStack ?? []).reduce(
         (sum, block, index) =>
           sum +
@@ -151,7 +170,7 @@ function rowHeight(
       );
 
   const right = row.right
-    ? getHeight(row.right, measurements)
+    ? (row.leftPercent ? atPercent(row.right, measurements, 100 - row.leftPercent) : getHeight(row.right, measurements))
     : 0;
 
   return Math.max(left, right);
@@ -184,6 +203,22 @@ export function buildRows(
     const second = blocks[index + 1];
     const third = blocks[index + 2];
 
+    // Pareja fija, antes de las decisiones automáticas.
+    const explicit = explicitRow(first, second);
+    if (explicit) {
+      addRow({
+        left: first, right: second,
+        leftPercent: explicit.leftPercent,
+        equalHeight: explicit.equalHeight,
+        height: Math.max(
+          atPercent(first, measurements, explicit.leftPercent),
+          atPercent(second, measurements, 100 - explicit.leftPercent)
+        ),
+      });
+      index += 2;
+      continue;
+    }
+
     // 1. Ancho completo.
     if (wantsFull(first)) {
       addRow({ full: first, height: 0 });
@@ -197,7 +232,8 @@ export function buildRows(
       third &&
       !wantsFull(second) &&
       !wantsFull(third) &&
-      ![first, second, third].some((block) => block.kind === 'image') &&
+      !explicitRow(second, third) &&
+      ![first, second, third].some((block) => block.kind === 'image' || Boolean(block.rowLayout)) &&
       shouldStack(
         first,
         second,
@@ -217,10 +253,11 @@ export function buildRows(
     }
 
     // 3. Dos bloques en horizontal.
-    if (second && !wantsFull(second)) {
+    if (second && !wantsFull(second) && !explicitRow(second, third)) {
       addRow({
         left: first,
         right: second,
+        equalHeight: first.kind !== 'image' && second.kind !== 'image',
         height: 0,
       });
 
@@ -304,7 +341,8 @@ export function paginateAdaptive(
   blocks: Block[],
   measurements: BlockMeasurements,
   capacity: number,
-  gap = 10
+  gap = 10,
+  continuationCapacity = capacity
 ): Page[] {
   const pages: Page[] = [{ rows: [] }];
 
@@ -337,6 +375,10 @@ export function paginateAdaptive(
         element.type === 'table' &&
         element.table.headers.length >= 4
     );
+
+  const hasTable = (block: Block): boolean =>
+    Boolean(block.table) ||
+    (block.elements ?? []).some((element) => element.type === 'table');
 
   const hasComplexContent = (block: Block): boolean =>
     block.kind === 'image' ||
@@ -388,7 +430,8 @@ export function paginateAdaptive(
     const page = currentPage();
     page.rows.push(row);
 
-    if (row.height > capacity + 0.5) {
+    const pageCapacity = pages.length === 1 ? capacity : continuationCapacity;
+    if (row.height > pageCapacity + 0.5) {
       page.oversize = true;
     }
   };
@@ -427,6 +470,22 @@ export function paginateAdaptive(
 
     const candidates: Candidate[] = [];
 
+    const explicit = explicitRow(first, second);
+    if (explicit) {
+      const h1 = atPercent(first, measurements, explicit.leftPercent);
+      const h2 = atPercent(second!, measurements, 100 - explicit.leftPercent);
+      candidates.push({
+        row: makeRow({
+          left: first, right: second,
+          leftPercent: explicit.leftPercent,
+          equalHeight: explicit.equalHeight,
+        }, Math.max(h1, h2)),
+        consumed: 2,
+        penalty: 0,
+      });
+      return candidates;
+    }
+
     if (wantsFull(first)) {
       candidates.push({
         row: makeRow(
@@ -452,7 +511,9 @@ export function paginateAdaptive(
 
     if (
       second &&
-      !wantsFull(second)
+      !wantsFull(second) &&
+      second.breakBefore !== 'always' &&
+      !explicitRow(second, third)
     ) {
       const h1 = height(first, 'half');
       const h2 = height(second, 'half');
@@ -463,6 +524,7 @@ export function paginateAdaptive(
           {
             left: first,
             right: second,
+            equalHeight: first.kind !== 'image' && second.kind !== 'image',
           },
           Math.max(h1, h2)
         ),
@@ -473,22 +535,42 @@ export function paginateAdaptive(
       });
 
       // Opción C: dos apilados a la izquierda.
+      // Excepción limitada: Inicio (con tabla estrecha) + Pregunta detonadora
+      // pueden acompañar a Desarrollo. Las demás restricciones se conservan.
+      const introWithDevelopment = Boolean(
+        third &&
+        first.kind === 'start' &&
+        second.kind === 'question' &&
+        third.kind === 'development' &&
+        hasTable(first) &&
+        !hasWideTable(first) &&
+        !first.checklist &&
+        !first.multipleChoice &&
+        !hasComplexContent(second) &&
+        !hasComplexContent(third)
+      );
+
       if (
         third &&
         !wantsFull(third) &&
+        third.breakBefore !== 'always' &&
+        !first.rowLayout && !second.rowLayout &&
         ![first, second, third].some(
           (block) =>
             block.kind === 'purpose' ||
-            block.kind === 'pda' ||
-            hasComplexContent(block)
-        )
+            block.kind === 'pda'
+        ) &&
+        (introWithDevelopment || ![first, second, third].some(hasComplexContent))
       ) {
         const h3 = height(third, 'half');
         const stack = h1 + gap + h2;
         const composed = Math.max(stack, h3);
 
+        // Tolerancia de 2 px en la comparación de alturas: evita rechazarla
+        // por diferencias mínimas de medición (636 frente a 637.1 px).
+        const minRelativeHeight = Math.max(h1, h2) * 1.15;
         const suitable =
-          h3 >= Math.max(h1, h2) * 1.15 &&
+          h3 >= minRelativeHeight - (introWithDevelopment ? 2 : 0) &&
           stack / Math.max(h3, 1) >= 0.65 &&
           stack / Math.max(h3, 1) <= 1.45;
 
@@ -531,8 +613,17 @@ export function paginateAdaptive(
   const findBestPlan = (
     startIndex: number,
     initialUsed: number,
-    initialRows: number
+    initialRows: number,
+    pageCapacity: number
   ): Plan => {
+    // Solo proteger el cierre cuando se haya aplicado realmente la
+    // nueva composición de Inicio + Pregunta + Desarrollo.
+    const hasIntroStack = pages.some((page) => page.rows.some((row) =>
+      row.leftStack?.[0]?.kind === 'start' &&
+      row.leftStack?.[1]?.kind === 'question' &&
+      row.right?.kind === 'development'
+    ));
+
     const evaluate = (
       index: number,
       used: number,
@@ -553,13 +644,40 @@ export function paginateAdaptive(
         return best;
       }
 
+      // Un divisor obligatorio exige la nueva página; no se mezcla en el plan actual.
+      if (flowBlocks[index]?.breakBefore === 'always' && rowsOnPage > 0) return best;
+
       for (const candidate of candidatesAt(index)) {
         const spacing = rowsOnPage > 0 ? gap : 0;
         const nextUsed =
           used + spacing + candidate.row.height;
 
-        if (nextUsed > capacity + 0.5) {
+        if (nextUsed > pageCapacity + 0.5) {
           continue;
+        }
+
+        // Si Cierre y Autoevaluación consecutivos caben juntos en una
+        // página de continuación, no dejar la Autoevaluación huérfana.
+        // No afecta cierres cuyos dos bloques realmente no caben juntos.
+        const nextBlock = flowBlocks[index + candidate.consumed];
+        if (
+          hasIntroStack &&
+          rowsOnPage > 0 &&
+          flowBlocks[index]?.kind === 'closing' &&
+          candidate.consumed === 1 &&
+          nextBlock?.kind === 'selfEvaluation' &&
+          nextBlock.breakBefore !== 'always'
+        ) {
+          const evaluationHeight = wantsFull(nextBlock)
+            ? height(nextBlock, 'full')
+            : height(nextBlock, 'half');
+          const combinedHeight = candidate.row.height + gap + evaluationHeight;
+          if (
+            combinedHeight <= continuationCapacity + 0.5 &&
+            nextUsed + gap + evaluationHeight > pageCapacity + 0.5
+          ) {
+            continue;
+          }
         }
 
         const next = evaluate(
@@ -582,7 +700,7 @@ export function paginateAdaptive(
         // 3. Menos composiciones forzadas.
         const score = (value: Plan) =>
           (value.nextIndex - startIndex) * 10000 +
-          (value.used / Math.max(capacity, 1)) * 100 -
+          (value.used / Math.max(pageCapacity, 1)) * 100 -
           value.penalty;
 
         if (score(plan) > score(best)) {
@@ -606,11 +724,14 @@ export function paginateAdaptive(
   while (index < flowBlocks.length) {
     const page = currentPage();
     const used = pageUsed(page);
+    // La primera hoja reserva el encabezado completo; las otras, el compacto.
+    const pageCapacity = pages.length === 1 ? capacity : continuationCapacity;
 
     const plan = findBestPlan(
       index,
       used,
-      page.rows.length
+      page.rows.length,
+      pageCapacity
     );
 
     if (plan.rows.length > 0) {

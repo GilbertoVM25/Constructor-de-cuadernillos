@@ -277,7 +277,7 @@ function ContentElementsView({
               }
               key={element.id}
             >
-              <table className="workbook-data-table">
+              <table className={`workbook-data-table${table.showBorders === false ? ' workbook-data-table--borderless' : ''}`}>
                 {table.showHeaders && (
                   <thead>
                     <tr>
@@ -558,7 +558,7 @@ function WorkbookTableView({
 
   return (
     <div className="workbook-table-container">
-      <table className="workbook-data-table">
+      <table className={`workbook-data-table${table.showBorders === false ? ' workbook-data-table--borderless' : ''}`}>
         {table.showHeaders && (
           <thead>
             <tr>
@@ -639,7 +639,15 @@ function BlockCard({
         />
       )}
 
-      <strong>{block.title}</strong>
+      <strong
+        style={
+          block.kind === 'pda'
+            ? { fontSize: '12px', lineHeight: 1.2 }
+            : undefined
+        }
+      >
+        {block.title}
+      </strong>
 
       </div>}
 
@@ -735,7 +743,12 @@ function PageRowView({
   }
 
   return (
-    <div className="paper-row">
+    <div
+      className={`paper-row ${row.equalHeight === false ? 'paper-row-independent' : ''}`}
+      style={row.leftPercent ? {
+        gridTemplateColumns: `minmax(0, ${row.leftPercent}fr) minmax(0, ${100 - row.leftPercent}fr)`,
+      } : undefined}
+    >
       <div className="paper-cell">
         {row.left && (
           <BlockCard
@@ -775,9 +788,23 @@ function PageRowView({
 
 function Header({
   workbook,
+  compact = false,
 }: {
   workbook: Workbook;
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <div className="paper-head paper-head-compact">
+        <span className="paper-head-compact-sequence">
+          SECUENCIA {workbook.sequence}
+          <span className="paper-head-compact-continuation"> · Continuación</span>
+        </span>
+        <span className="paper-head-compact-subject">Química</span>
+      </div>
+    );
+  }
+
   return (
     <div className="paper-head">
       <div className="sequence">
@@ -837,10 +864,12 @@ export function PagePreview({
 }: PreviewProps) {
   const [measurements, setMeasurements] = useState<{
     blocks: BlockMeasurements;
-    capacity: number;
+    firstCapacity: number;
+    continuationCapacity: number;
   }>({
     blocks: {},
-    capacity: 905,
+    firstCapacity: 905,
+    continuationCapacity: 905,
   });
 
   const [showPaginationDebug, setShowPaginationDebug] = useState(false);
@@ -851,7 +880,8 @@ export function PagePreview({
   );
 
   const measurementRef = useRef<HTMLDivElement>(null);
-  const probeRef = useRef<HTMLDivElement>(null);
+  const firstProbeRef = useRef<HTMLDivElement>(null);
+  const continuationProbeRef = useRef<HTMLDivElement>(null);
 
   /*
    * Mide los bloques a dos anchuras:
@@ -859,9 +889,10 @@ export function PagePreview({
    */
   useLayoutEffect(() => {
     const container = measurementRef.current;
-    const probe = probeRef.current;
+    const firstProbe = firstProbeRef.current;
+    const continuationProbe = continuationProbeRef.current;
 
-    if (!container || !probe) return;
+    if (!container || !firstProbe || !continuationProbe) return;
 
     let frame = 0;
     let active = true;
@@ -882,8 +913,7 @@ export function PagePreview({
         elements.forEach((element) => {
           const id = element.dataset.measureId;
           const width = element.dataset.measureWidth as
-            | 'half'
-            | 'full';
+            | 'half' | 'full' | '30' | '40' | '60' | '70';
 
           if (!id || !width) return;
 
@@ -893,18 +923,18 @@ export function PagePreview({
             element.getBoundingClientRect().height;
         });
 
-        const region =
-          probe.querySelector<HTMLElement>(
-            '.paper-rows'
-          );
-
-        const capacity =
-          region?.getBoundingClientRect().height ??
-          905;
+        // Cada tipo de encabezado reserva un alto diferente en A4.
+        const firstCapacity =
+          firstProbe.querySelector<HTMLElement>('.paper-rows')
+            ?.getBoundingClientRect().height ?? 905;
+        const continuationCapacity =
+          continuationProbe.querySelector<HTMLElement>('.paper-rows')
+            ?.getBoundingClientRect().height ?? firstCapacity;
 
         setMeasurements((previous) => {
           const sameCapacity =
-            Math.abs(previous.capacity - capacity) < 0.5;
+            Math.abs(previous.firstCapacity - firstCapacity) < 0.5 &&
+            Math.abs(previous.continuationCapacity - continuationCapacity) < 0.5;
 
           const sameBlocks = visualBlocks.every(
             (block) => {
@@ -915,7 +945,11 @@ export function PagePreview({
                 old &&
                 current &&
                 Math.abs(old.half - current.half) < 0.5 &&
-                Math.abs(old.full - current.full) < 0.5
+                Math.abs(old.full - current.full) < 0.5 &&
+                ([30, 40, 60, 70] as const).every((percent) =>
+                  Math.abs((old[String(percent) as '30' | '40' | '60' | '70'] ?? 0) -
+                    (current[String(percent) as '30' | '40' | '60' | '70'] ?? 0)) < 0.5
+                )
               );
             }
           );
@@ -931,7 +965,8 @@ export function PagePreview({
 
           return {
             blocks: next,
-            capacity,
+            firstCapacity,
+            continuationCapacity,
           };
         });
       });
@@ -945,7 +980,8 @@ export function PagePreview({
       )
       .forEach((element) => observer.observe(element));
 
-    observer.observe(probe);
+    observer.observe(firstProbe);
+    observer.observe(continuationProbe);
 
     calculate();
     void document.fonts?.ready.then(calculate);
@@ -963,7 +999,9 @@ export function PagePreview({
       paginateAdaptive(
         visualBlocks,
         measurements.blocks,
-        measurements.capacity
+        measurements.firstCapacity,
+        10,
+        measurements.continuationCapacity
       ),
     [visualBlocks, measurements]
   );
@@ -1004,7 +1042,7 @@ export function PagePreview({
       return Math.max(left, right);
     };
 
-    return pages.map((page) => {
+    return pages.map((page, index) => {
       if (page.oversize) return 0;
 
       const used = page.rows.reduce(
@@ -1012,7 +1050,10 @@ export function PagePreview({
           sum + row.height + (index > 0 ? 10 : 0),
         0
       );
-      const free = Math.max(0, measurements.capacity - used);
+      const available = index === 0
+        ? measurements.firstCapacity
+        : measurements.continuationCapacity;
+      const free = Math.max(0, available - used);
       const effectiveLines = page.rows.reduce(
         (total, row) => total + linesInRow(row),
         0
@@ -1030,7 +1071,7 @@ export function PagePreview({
         Math.min(14, Math.floor((usable * 0.8) / effectiveLines))
       );
     });
-  }, [pages, measurements.capacity]);
+  }, [pages, measurements.firstCapacity, measurements.continuationCapacity]);
 
 
   return (
@@ -1048,7 +1089,8 @@ export function PagePreview({
             <div className="pagination-debug-report">
               <strong>Diagnóstico de esta secuencia</strong>
               <p>
-                Área disponible: {Math.round(measurements.capacity)} px ·
+                Área disponible: primera {Math.round(measurements.firstCapacity)} px,
+                continuación {Math.round(measurements.continuationCapacity)} px ·
                 Páginas: {pages.length} ·
                 Bloques: {workbook.blocks.length}
               </p>
@@ -1058,7 +1100,10 @@ export function PagePreview({
                     sum + row.height + (rowIndex > 0 ? 10 : 0),
                   0
                 );
-                const remaining = measurements.capacity - used;
+                const pageCapacity = pageIndex === 0
+                  ? measurements.firstCapacity
+                  : measurements.continuationCapacity;
+                const remaining = pageCapacity - used;
                 return (
                   <div key={pageIndex} className="pagination-debug-page">
                     <strong>
@@ -1074,7 +1119,7 @@ export function PagePreview({
                            ...(row.right ? [row.right] : [])];
                       return (
                         <div key={rowIndex}>
-                          Fila {rowIndex + 1} ({Math.round(row.height)} px):{' '}
+                          Fila {rowIndex + 1} ({Math.round(row.height)} px){row.leftPercent ? ` [${row.leftPercent}/${100-row.leftPercent}]` : ''}:{' '}
                           {rowBlocks.map((block) => block.title).join(' | ')}
                         </div>
                       );
@@ -1125,6 +1170,22 @@ export function PagePreview({
           </div>
         ))}
 
+        {([30, 40, 60, 70] as const).flatMap((percent) =>
+          visualBlocks.map((block) => (
+            <div
+              className="measure-ratio"
+              key={`${percent}-${block.id}`}
+              style={{ gridTemplateColumns: `minmax(0, ${percent}fr) minmax(0, ${100-percent}fr)` }}
+            >
+              <div className="paper-cell">
+                <div data-measure-id={block.id} data-measure-width={percent}>
+                  <BlockCard block={block} selected={false} onSelect={() => {}} />
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+
         {visualBlocks.map((block) => (
           <div
             className="measure-full"
@@ -1148,7 +1209,7 @@ export function PagePreview({
       <div
         className="pagination-probe paper"
         aria-hidden="true"
-        ref={probeRef}
+        ref={firstProbeRef}
       >
         <Header workbook={workbook} />
         <div className="paper-rows" />
@@ -1156,6 +1217,17 @@ export function PagePreview({
           pageNumber={pageStart}
           workbook={workbook}
         />
+      </div>
+
+      {/* Segunda hoja de medición: encabezado compacto. */}
+      <div
+        className="pagination-probe paper"
+        aria-hidden="true"
+        ref={continuationProbeRef}
+      >
+        <Header workbook={workbook} compact />
+        <div className="paper-rows" />
+        <Footer pageNumber={pageStart + 1} workbook={workbook} />
       </div>
 
       {/* Páginas visibles. */}
@@ -1167,7 +1239,7 @@ export function PagePreview({
             '--answer-line-extra': `${pageAnswerExtras[index] ?? 0}px`,
           } as React.CSSProperties}
         >
-          <Header workbook={workbook} />
+          <Header workbook={workbook} compact={index > 0} />
 
           <div className="paper-rows">
             {page.rows.map((row, rowIndex) => (

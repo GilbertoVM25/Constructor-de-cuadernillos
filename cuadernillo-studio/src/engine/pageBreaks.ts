@@ -21,7 +21,34 @@ export function splitBlocksAtDividers(blocks: Block[]): Block[] {
         groups[groups.length - 1].items!.push(element);
       }
     }
-    return groups.filter((group) => group.items?.length).map((group, index) => ({
+    // Las opciones PISA se renderizan DESPUÉS de todos los elementos.
+    // Por ello deben pertenecer al último fragmento, no al primero.
+    // De lo contrario, un divisor puede situarlas antes de las tablas
+    // o de las preguntas que explican la situación.
+    // Un divisor al FINAL de elements debe poder separar el ejercicio PISA,
+    // aunque no haya otro elemento después: multipleChoice se renderiza fuera
+    // del arreglo elements, al terminar ContentElementsView.
+    const lastGroupIndex = groups.length - 1;
+    const hasTrailingDivider =
+      lastGroupIndex > 0 && !groups[lastGroupIndex].items?.length;
+    const hasTrailingPisa = hasTrailingDivider && Boolean(block.multipleChoice);
+
+    const nonemptyGroups = groups.filter(
+      (group, index) =>
+        Boolean(group.items?.length) ||
+        (hasTrailingPisa && index === lastGroupIndex)
+    );
+
+    // Un bloque sin elementos normales (por ejemplo, con solo PISA y un
+    // divisor) no debe desaparecer del cuadernillo.
+    if (nonemptyGroups.length === 0) {
+      return [{
+        ...block,
+        elements: elements.filter((element) => element.type !== 'pageBreak'),
+      }];
+    }
+
+    return nonemptyGroups.map((group, index) => ({
       ...block,
       id: `${block.id}::page-part::${index}`,
       sourceId: block.id,
@@ -31,7 +58,8 @@ export function splitBlocksAtDividers(blocks: Block[]): Block[] {
       image: index === 0 ? block.image : undefined,
       table: index === 0 ? block.table : undefined,
       checklist: index === 0 ? block.checklist : undefined,
-      multipleChoice: index === 0 ? block.multipleChoice : undefined,
+      multipleChoice:
+        index === nonemptyGroups.length - 1 ? block.multipleChoice : undefined,
       suppressLegacyLines: true,
       elements: group.items,
       breakBefore: index === 0 ? undefined : group.mode,

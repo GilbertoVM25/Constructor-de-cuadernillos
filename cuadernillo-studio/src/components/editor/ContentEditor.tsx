@@ -789,6 +789,20 @@ export function ContentEditor({
                     />
                   </label>
 
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={element.table.showBorders !== false}
+                      onChange={(event) =>
+                        updateTable(element.id, {
+                          ...element.table,
+                          showBorders: event.target.checked,
+                        })
+                      }
+                    />
+                    Mostrar bordes de las celdas
+                  </label>
+
                   <div className="content-table-actions">
                     <button
                       type="button"

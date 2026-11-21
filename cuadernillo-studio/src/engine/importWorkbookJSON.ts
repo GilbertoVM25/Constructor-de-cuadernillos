@@ -39,6 +39,10 @@ function nonnegative(value: unknown, at: string): number {
   }
   return value;
 }
+function boolean(value: unknown, at: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${at}: se esperaba verdadero o falso.`);
+  return value;
+}
 function array(value: unknown, at: string): unknown[] {
   if (!Array.isArray(value)) throw new Error(`${at}: se esperaba una lista.`);
   return value;
@@ -87,6 +91,7 @@ function table(value: unknown, at: string, ids: Set<string>): WorkbookTable {
   return {
     id: id(v.id, ids), headers, rows,
     showHeaders: v.showHeaders === undefined ? true : v.showHeaders === true,
+    showBorders: v.showBorders === undefined ? true : boolean(v.showBorders, `${at}.showBorders`),
     ...(Object.keys(cellImages).length ? { cellImages } : {}),
   };
 }
@@ -195,6 +200,18 @@ function block(value: unknown, at: string, ids: Set<string>): Block {
       justificationLines: nonnegative(mc.justificationLines ?? 0, `${at}.multipleChoice.justificationLines`),
     };
   }
+  let rowLayout: Block['rowLayout'];
+  if (v.rowLayout !== undefined) {
+    const row = object(v.rowLayout, `${at}.rowLayout`);
+    if (typeof row.equalHeight !== 'boolean') {
+      throw new Error(`${at}.rowLayout.equalHeight: se esperaba verdadero o falso.`);
+    }
+    rowLayout = {
+      partnerId: str(row.partnerId, `${at}.rowLayout.partnerId`),
+      leftPercent: choice(row.leftPercent, [30, 40, 50, 60, 70] as const, `${at}.rowLayout.leftPercent`),
+      equalHeight: row.equalHeight,
+    };
+  }
   return {
     id: id(v.id, ids), kind,
     title: str(v.title ?? '', `${at}.title`),
@@ -202,6 +219,7 @@ function block(value: unknown, at: string, ids: Set<string>): Block {
     column: choice(v.column ?? 'auto', columns, `${at}.column`),
     layout: choice(v.layout ?? (kind === 'purpose' || kind === 'pda' ? 'half' : 'auto'), layouts, `${at}.layout`),
     minHeight: nonnegative(v.minHeight ?? 90, `${at}.minHeight`),
+    rowLayout,
     image: optionalStr(v.image, `${at}.image`),
     suppressLegacyLines: v.suppressLegacyLines === true ? true : undefined,
     table: v.table === undefined ? undefined : table(v.table, `${at}.table`, ids),

@@ -20,6 +20,14 @@ export type BlockKind =
 
 export type BlockLayout = 'auto' | 'half' | 'full';
 
+/** Distribución de una pareja de bloques consecutivos. Se declara en el bloque izquierdo. */
+export type BlockRowLayout = {
+  partnerId: string;
+  leftPercent: 30 | 40 | 50 | 60 | 70;
+  /** true iguala los bordes inferiores; false conserva las alturas naturales. */
+  equalHeight: boolean;
+};
+
 export type QuestionElement = {
   id: string;
   type: 'question';
@@ -162,6 +170,7 @@ export type Block = {
     /** Evita mostrar líneas antiguas en cada fragmento. */
     suppressLegacyLines?: boolean;
   layout?: BlockLayout;
+  rowLayout?: BlockRowLayout;
   table?: WorkbookTable;
   
   checklist?: ChecklistItem[];
@@ -206,6 +215,8 @@ export type WorkbookTable = {
   headers: string[];
   rows: string[][];
   showHeaders: boolean;
+  /** Si es false, se ocultan todas las líneas de la tabla; por defecto se muestran. */
+  showBorders?: boolean;
   cellImages?: Record<string, TableCellImage>;
 };
 
